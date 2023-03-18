@@ -179,7 +179,7 @@ def detect_spikes(raw, plot=True):
     return spikes_onsets
 
 
-def save_detection_to_csv(detections):
+def save_detection_to_npz_file(detections):
     np.savez(subject_spikes_path, **detections)
 
 
@@ -206,4 +206,4 @@ if __name__ == '__main__':
         channel_spikes = detect_spikes(raw, False)
         spikes[f'{chans[0]}-{chans[1]}'] = channel_spikes
 
-    save_detection_to_csv(spikes)
+    save_detection_to_npz_file(spikes)
