@@ -64,7 +64,7 @@ def bandpower_from_psd_ndarray(psd, freqs, bands, relative=True):
     return bp
 
 
-def calc_features(epochs, subj):
+def calc_features(epochs, subject):
     # Bandpass filter
     freq_broad = (0.1, 500)
     # FFT & bandpower parameters
@@ -78,7 +78,7 @@ def calc_features(epochs, subj):
     hmob, hcomp = ant.hjorth_params(epochs, axis=1)
 
     feat = {
-        'subj': np.full(len(epochs), subj),
+        'subj': np.full(len(epochs), subject),
         'epoch_id': np.arange(len(epochs)),
         'std': np.std(epochs, ddof=1, axis=1),
         'iqr': sp_stats.iqr(epochs, axis=1),
@@ -144,7 +144,7 @@ def calc_features(epochs, subj):
 
 def format_raw(raw):
     epochs = []
-    window_size = int(SR / 4)
+    window_size = int(SR / DIVISION_FACTOR)
     raw.load_data()
 
     # Create bipolar channel
@@ -153,57 +153,63 @@ def format_raw(raw):
 
     # Normalization
     raw_data = sp_stats.zscore(raw_data)
-
+    print(f'len: {len(raw_data)}')
     for i in range(0, len(raw_data), window_size):
         curr_block = raw_data[i: i + window_size]
         if i + window_size < len(raw_data):
             epochs.append(curr_block)
-
     return np.array(epochs)
 
 
-def detect_spikes(raw, plot=True):
+def detect_spikes(raw, subject, plot=True):
     x = format_raw(raw)
-    features = calc_features(x, subj)
+    features = calc_features(x, subject)
     features = np.nan_to_num(features[model_lgbm.feature_name_])
     y_lgbm = model_lgbm.predict(features)
     y_rf = model_rf.predict(features)
     y = np.array(y_lgbm) + np.array(y_rf)
     y[y == 2] = 1
-    spikes_onsets = np.where(y == 1)[0] / 8  # TODO: it looks like there are 8 slots for every second ?
+    spikes_onsets = np.where(y == 1)[0] / DIVISION_FACTOR
     if plot:
         raw.set_annotations(mne.Annotations(spikes_onsets, [0.25] * len(spikes_onsets), ['spike'] * len(spikes_onsets)))
         mne.set_bipolar_reference(raw, raw.ch_names[0], raw.ch_names[1], ch_name='bi', drop_refs=False).plot(
             duration=30, scalings='auto')
-        # raw.plot(duration=30)
     return spikes_onsets
 
 
-def save_detection_to_npz_file(detections):
+def save_detection_to_npz_file(detections, subject):
+    print(f"Saving detections for subject {subject}")
     np.savez(subject_spikes_path, **detections)
 
 
-if __name__ == '__main__':
-    raw_data = mne.io.read_raw_edf(subject_raw_edf_path)
-    all_channels = raw_data.ch_names
-    chans_bi = []
+def create_bipolar_channels(channels):
+    bi_channels = []
 
     # get the channels for bipolar reference
-    for i, chan in enumerate(all_channels):
+    for i, chan in enumerate(channels):
         if i + 1 < len(all_channels):
             next_chan = all_channels[i + 1]
             # check that its the same contact
             if next_chan[:-1] == chan[:-1]:
-                chans_bi.append([chan, next_chan])
+                bi_channels.append([chan, next_chan])
+
+    return bi_channels
+
+
+if __name__ == '__main__':
+    raw_data = mne.io.read_raw_edf(subject_raw_edf_path)
+    all_channels = raw_data.ch_names  # TODO: channels filtering
+    bipolar_channels = create_bipolar_channels(all_channels)
 
     spikes = {}
     # run on each channel and detect the spikes between stims
-    print(chans_bi)
-    for chans in chans_bi:
+    for channels in bipolar_channels:
+        print(f'Detecting spikes for channels {channels}')
         raw_copy = raw_data.copy()
-        raw = raw_copy.pick_channels(chans)
+        raw = raw_copy.pick_channels(channels)
         raw.crop(tmax=300)
-        channel_spikes = detect_spikes(raw, False)
-        spikes[f'{chans[0]}-{chans[1]}'] = channel_spikes
+        channel_spikes = detect_spikes(raw, SUBJECT, False)
+        spikes[f'{channels[0]}-{channels[1]}'] = channel_spikes
+        print(f'Finished detecting spikes for channels {channels}')
 
-    save_detection_to_npz_file(spikes)
+    save_detection_to_npz_file(spikes, SUBJECT)
