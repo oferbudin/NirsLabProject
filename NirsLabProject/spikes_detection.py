@@ -153,7 +153,6 @@ def format_raw(raw):
 
     # Normalization
     raw_data = sp_stats.zscore(raw_data)
-    print(f'len: {len(raw_data)}')
     for i in range(0, len(raw_data), window_size):
         curr_block = raw_data[i: i + window_size]
         if i + window_size < len(raw_data):
@@ -182,34 +181,51 @@ def save_detection_to_npz_file(detections, subject):
     np.savez(subject_spikes_path, **detections)
 
 
+def clean_channel_name(channel):
+    return channel.replace('-REF1', '').replace('SEEG ', '')
+
+
 def create_bipolar_channels(channels):
     bi_channels = []
 
     # get the channels for bipolar reference
     for i, chan in enumerate(channels):
-        if i + 1 < len(all_channels):
-            next_chan = all_channels[i + 1]
+        if i + 1 < len(channels):
+            next_chan = channels[i + 1]
             # check that its the same contact
-            if next_chan[:-1] == chan[:-1]:
+            if clean_channel_name(next_chan)[:-1] == clean_channel_name(chan)[:-1]:
                 bi_channels.append([chan, next_chan])
 
     return bi_channels
 
 
+def get_index_of_last_seeg_channel(channels):
+    SEEG_PREFIX = 'SEEG'
+    for i in range(len(channels)-1, 0, -1):
+        if channels[i].startswith(SEEG_PREFIX):
+            return i+1
+    return len(channels)
+
 if __name__ == '__main__':
     raw_data = mne.io.read_raw_edf(subject_raw_edf_path)
-    all_channels = raw_data.ch_names  # TODO: channels filtering
-    bipolar_channels = create_bipolar_channels(all_channels)
+    all_channels = raw_data.ch_names
+    last_channel_index = get_index_of_last_seeg_channel(all_channels)
+    seeg_channels = all_channels[:last_channel_index]
+    bipolar_channels = create_bipolar_channels(seeg_channels)
 
     spikes = {}
+    import time
     # run on each channel and detect the spikes between stims
     for channels in bipolar_channels:
+        s = time.time()
         print(f'Detecting spikes for channels {channels}')
         raw_copy = raw_data.copy()
         raw = raw_copy.pick_channels(channels)
-        raw.crop(tmax=300)
+        raw.crop(tmax=60*60*2)
+        raw.resample(SR)
         channel_spikes = detect_spikes(raw, SUBJECT, False)
-        spikes[f'{channels[0]}-{channels[1]}'] = channel_spikes
+        spikes[clean_channel_name(channels[0])] = channel_spikes
         print(f'Finished detecting spikes for channels {channels}')
+        print(f'Took {time.time() - s}')
 
     save_detection_to_npz_file(spikes, SUBJECT)
