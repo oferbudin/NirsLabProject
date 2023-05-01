@@ -1,17 +1,26 @@
+import os
 import mne
-import pandas as pd
-import numpy as np
-import scipy.stats as sp_stats
-import scipy.signal as sp_sig
-from scipy.integrate import simps
-import antropy as ant
-from sklearn.preprocessing import robust_scale
+import time
 import joblib
+import numpy as np
+import pandas as pd
+import antropy as ant
+import scipy.signal as sp_sig
+import scipy.stats as sp_stats
+from scipy.integrate import simps
+from typing import List, Dict, Tuple
+from sklearn.preprocessing import robust_scale
 
-from NirsLabProject.consts import *
+from NirsLabProject import utils
+from NirsLabProject.config.consts import *
+from NirsLabProject import sleeping_utils
+from NirsLabProject.config.paths import Paths
+from NirsLabProject.config.subject import Subject
 
-model_lgbm = joblib.load('models/LGBM_V1.pkl')
-model_rf = joblib.load('models/RF_V1.pkl')
+model_lgbm = joblib.load(os.path.join(Paths.models_dir_path, 'LGBM_V1.pkl'))
+model_rf = joblib.load(os.path.join(Paths.models_dir_path, 'RF_V1.pkl'))
+
+mne.set_config('MNE_BROWSER_BACKEND', 'qt')
 
 
 def bandpower_from_psd_ndarray(psd, freqs, bands, relative=True):
@@ -64,7 +73,7 @@ def bandpower_from_psd_ndarray(psd, freqs, bands, relative=True):
     return bp
 
 
-def calc_features(epochs, subject):
+def calc_features(epochs: np.ndarray, subject_name: str):
     # Bandpass filter
     freq_broad = (0.1, 500)
     # FFT & bandpower parameters
@@ -78,7 +87,7 @@ def calc_features(epochs, subject):
     hmob, hcomp = ant.hjorth_params(epochs, axis=1)
 
     feat = {
-        'subj': np.full(len(epochs), subject),
+        'subj': np.full(len(epochs), subject_name),
         'epoch_id': np.arange(len(epochs)),
         'std': np.std(epochs, ddof=1, axis=1),
         'iqr': sp_stats.iqr(epochs, axis=1),
@@ -142,7 +151,7 @@ def calc_features(epochs, subject):
     return feat
 
 
-def format_raw(raw):
+def format_raw(raw: mne.io.Raw) -> np.ndarray:
     epochs = []
     window_size = int(SR / DIVISION_FACTOR)
     raw.load_data()
@@ -160,9 +169,9 @@ def format_raw(raw):
     return np.array(epochs)
 
 
-def detect_spikes(raw, subject, plot=True):
+def detect_spikes(raw: mne.io.Raw, subject: Subject, plot: bool = True) -> np.ndarray:
     x = format_raw(raw)
-    features = calc_features(x, subject)
+    features = calc_features(x, subject.name)
     features = np.nan_to_num(features[model_lgbm.feature_name_])
     y_lgbm = model_lgbm.predict(features)
     y_rf = model_rf.predict(features)
@@ -176,16 +185,12 @@ def detect_spikes(raw, subject, plot=True):
     return spikes_onsets
 
 
-def save_detection_to_npz_file(detections, subject):
-    print(f"Saving detections for subject {subject}")
-    np.savez(subject_spikes_path, **detections)
+def save_detection_to_npz_file(detections: Dict[str, np.ndarray], subject: Subject):
+    print(f"Saving detections for subject {subject.name}")
+    np.savez(subject.paths.subject_spikes_path, **detections)
 
 
-def clean_channel_name(channel):
-    return channel.replace('-REF1', '').replace('SEEG ', '')
-
-
-def create_bipolar_channels(channels):
+def create_bipolar_channels(channels: List[str]) -> List[List[str]]:
     bi_channels = []
 
     # get the channels for bipolar reference
@@ -193,39 +198,32 @@ def create_bipolar_channels(channels):
         if i + 1 < len(channels):
             next_chan = channels[i + 1]
             # check that its the same contact
-            if clean_channel_name(next_chan)[:-1] == clean_channel_name(chan)[:-1]:
+            if next_chan[:-1] == chan[:-1]:
                 bi_channels.append([chan, next_chan])
 
     return bi_channels
 
 
-def get_index_of_last_seeg_channel(channels):
-    SEEG_PREFIX = 'SEEG'
-    for i in range(len(channels)-1, 0, -1):
-        if channels[i].startswith(SEEG_PREFIX):
-            return i+1
-    return len(channels)
+def detect_spikes_of_subject(subject: Subject, raw: mne.io.Raw, sleep_cycle_data: bool = False) -> dict:
 
-if __name__ == '__main__':
-    raw_data = mne.io.read_raw_edf(subject_raw_edf_path)
-    all_channels = raw_data.ch_names
-    last_channel_index = get_index_of_last_seeg_channel(all_channels)
-    seeg_channels = all_channels[:last_channel_index]
-    bipolar_channels = create_bipolar_channels(seeg_channels)
+    if os.path.exists(subject.paths.subject_spikes_path):
+        return np.load(subject.paths.subject_spikes_path)
+
+    if sleep_cycle_data:
+        start_timestamp, end_timestamp = sleeping_utils.get_timestamps_in_seconds_of_first_rem_sleep(subject)
+        raw.crop(tmin=start_timestamp, tmax=end_timestamp)
+
+    bipolar_channels = create_bipolar_channels(raw.ch_names)
 
     spikes = {}
-    import time
     # run on each channel and detect the spikes between stims
     for channels in bipolar_channels:
         s = time.time()
         print(f'Detecting spikes for channels {channels}')
-        raw_copy = raw_data.copy()
-        raw = raw_copy.pick_channels(channels)
-        raw.crop(tmax=60*60*2)
-        raw.resample(SR)
-        channel_spikes = detect_spikes(raw, SUBJECT, False)
-        spikes[clean_channel_name(channels[0])] = channel_spikes
-        print(f'Finished detecting spikes for channels {channels}')
-        print(f'Took {time.time() - s}')
+        bi_raw = raw.copy().pick_channels(channels)
+        channel_spikes = detect_spikes(bi_raw, subject, False)
+        spikes[channels[0]] = channel_spikes
+        print(f'Finished detecting spikes for channels {channels} | Took {time.time() - s}')
 
-    save_detection_to_npz_file(spikes, SUBJECT)
+    save_detection_to_npz_file(spikes, subject)
+    return spikes
