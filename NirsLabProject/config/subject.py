@@ -7,6 +7,9 @@ class Subject:
         self.name = subject
         self.paths = Paths(subject)
 
+        os.makedirs(self.paths.subject_products_dir_path, exist_ok=True)
+        os.makedirs(self.paths.subject_resampled_data_dir_path, exist_ok=True)
+        os.makedirs(self.paths.subject_spikes_dir_path, exist_ok=True)
         os.makedirs(self.paths.subject_plots_dir_path, exist_ok=True)
         os.makedirs(self.paths.subject_raster_plots_dir_path, exist_ok=True)
         os.makedirs(self.paths.subject_psd_plots_dir_path, exist_ok=True)

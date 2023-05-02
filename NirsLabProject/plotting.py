@@ -184,4 +184,5 @@ def create_PSD_plot(subject: Subject, channel_raw: mne.io.Raw, channel_name: str
     spectrum.plot(
         show=show,
     )
+    plt.title(f'{subject.name}-{channel_name}-PSD')
     plt.savefig(os.path.join(subject.paths.subject_psd_plots_dir_path, f'{subject.name}-{channel_name}.png'),  dpi=1000)

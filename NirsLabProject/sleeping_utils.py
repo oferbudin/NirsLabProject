@@ -23,8 +23,9 @@ def get_hypnogram_indexes_of_first_rem_sleep(subject: Subject) -> Tuple[int, int
     hypnogram = np.loadtxt(subject.paths.subject_hypnogram_path)
     sleeping_stages = hypno.hypno_find_periods(hypnogram, sf_hypno=HYPNOGRAM_SF, threshold='5min')
     first_rem = sleeping_stages[sleeping_stages['values'] == REM].min()
-    last_wake = sleeping_stages[(sleeping_stages['start'] < first_rem['start']) &
-                                (sleeping_stages['values'] == 0)].max()
+    last_wakes = sleeping_stages[np.logical_and(sleeping_stages['start'] < first_rem['start'],
+                                sleeping_stages['values'] == WAKE)]
+    last_wake = last_wakes.iloc[-1]
     return int(last_wake['start'] + last_wake['length']), int(first_rem['start'] + first_rem['length'])
 
 

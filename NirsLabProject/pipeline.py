@@ -1,6 +1,7 @@
 import os
 
 import mne
+import time
 from typing import List
 import scipy.stats as sp_stats
 
@@ -24,8 +25,8 @@ def resample_and_filter_data(subject: Subject, raw: mne.io.Raw):
     return mne.io.read_raw_fif(subject.paths.subject_resampled_fif_path)
 
 
-def main():
-    subject = Subject('p396')
+def main(subject_name: str):
+    subject = Subject(subject_name)
 
     raw = mne.io.read_raw_edf(subject.paths.subject_raw_edf_path)
     utils.pick_seeg_channels(raw)
@@ -60,4 +61,6 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    start_time = time.time()
+    main('p406')
+    print(f'Time taken: {(time.time() - start_time) / 60} minutes')
