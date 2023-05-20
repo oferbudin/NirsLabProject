@@ -19,14 +19,14 @@ def resample_and_filter_data(subject: Subject, raw: mne.io.Raw):
     if not os.path.exists(subject.paths.subject_resampled_fif_path):
         print(f'Resampling data, it might take some time... (around {len(raw.ch_names) * 4 // 60} minutes)')
         raw.resample(SR, n_jobs=2)
-        print(f'Filtering data, it might take some time... (around {len(raw.ch_names) * 4 / 60} minutes)')
-        raw.filter(l_freq=LOW_THRESHOLD_FREQUENCY, h_freq=HIGH_THRESHOLD_FREQUENCY, n_jobs=2)
+        # print(f'Filtering data, it might take some time... (around {len(raw.ch_names) * 4 / 60} minutes)')
+        # raw.filter(l_freq=LOW_THRESHOLD_FREQUENCY, h_freq=HIGH_THRESHOLD_FREQUENCY, n_jobs=2)
         raw.save(subject.paths.subject_resampled_fif_path)
     return mne.io.read_raw_fif(subject.paths.subject_resampled_fif_path)
 
 
 def main(subject_name: str):
-    subject = Subject(subject_name)
+    subject = Subject(subject_name, False)
 
     raw = mne.io.read_raw_edf(subject.paths.subject_raw_edf_path)
     utils.pick_seeg_channels(raw)
@@ -45,19 +45,33 @@ def main(subject_name: str):
     plotting.create_raster_plot(
         subject=subject,
         spikes=spikes,
+        add_hypnogram=True,
+        add_histogram=True,
+        cut_hypnogram=False
+    )
+
+    plotting.create_raster_plot(
+        subject=subject,
+        spikes=spikes,
         add_hypnogram=False,
-        add_histogram=True
+        add_histogram=True,
     )
 
     for i, channel_name in enumerate(raw.ch_names):
         if channel_name.endswith('1'):
             channel_raw = raw.copy().pick_channels([channel_name])
-            channel_data = channel_raw.get_data()
-            channel_data = np.apply_along_axis(sp_stats.zscore, 1, channel_data)[0]
+            channel_data = channel_raw.get_data()[0]
+            channel_data = sp_stats.zscore(channel_data)
             channel_spikes = spikes[channel_name]
+            plotting.create_TFR_plot(subject, channel_raw, channel_data, channel_spikes, channel_name)
+            plotting.create_PSD_plot(subject, channel_raw, channel_data, channel_spikes, channel_name)
+
+            channel_raw.load_data()
+            channel_raw = channel_raw.filter(l_freq=5, h_freq=HIGH_THRESHOLD_FREQUENCY, n_jobs=2)
+            channel_data = channel_raw.get_data()[0]
+            channel_data = sp_stats.zscore(channel_data)
             plotting.create_ERP_plot(subject, channel_raw, channel_data, channel_spikes, channel_name)
-            plotting.create_TFR_plot(subject, channel_raw, channel_data, channel_spikes, channel_name,)
-            plotting.create_PSD_plot(subject, channel_raw, channel_name)
+            plotting.create_channel_features_histograms(subject, channel_data, channel_spikes, channel_name)
 
 
 if __name__ == '__main__':

@@ -2,8 +2,9 @@ import os
 import mne
 import numpy as np
 import pandas as pd
-from typing import List, Dict
+from typing import List, Dict, Tuple
 import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
 from mne.time_frequency import tfr_morlet
 
 from NirsLabProject import utils
@@ -12,7 +13,7 @@ from NirsLabProject.config.subject import Subject
 from NirsLabProject.config.consts import *
 
 
-COLOR_CODES = np.array(['black', 'blue', 'red'])
+COLOR_CODES = np.array(['#000000', '#332288', '#117733', '#CC6677', '#AA4499'])
 
 
 def get_channel_names_and_color(channels: List[str]) -> Dict[str, str]:
@@ -23,15 +24,21 @@ def get_channel_names_and_color(channels: List[str]) -> Dict[str, str]:
     return colors
 
 
-def add_hypnogram_to_fig(subject: Subject, ax, number_of_channels: int):
-    hypnogram = np.loadtxt(subject.paths.subject_hypnogram_path)
-    start, end = sleeping_utils.get_hypnogram_indexes_of_first_rem_sleep(subject)
-    hypno = hypnogram[(start - TIME_IN_MINUTES_BEFORE_SLEEP_START*HYPNOGRAM_SR):(end + TIME_IN_MINUTES_AFTER_REM_END*HYPNOGRAM_SR)]
+def add_hypnogram_to_fig(subject: Subject, ax, number_of_channels: int, sleeping_stage: int, color: str = '#DCDCDC', cut_hypnogram: bool = True):
+    hypno = np.loadtxt(subject.paths.subject_hypnogram_path)
+    if cut_hypnogram:
+        start, end = sleeping_utils.get_hypnogram_indexes_of_first_rem_sleep(subject)
+        hypno = hypno[(start - TIME_IN_MINUTES_BEFORE_SLEEP_START*HYPNOGRAM_SR):(end + TIME_IN_MINUTES_AFTER_REM_END*HYPNOGRAM_SR)]
 
     bins = np.arange(hypno.size) * HYPNOGRAM_SAMPLES_INTERVAL_IN_SECONDS
 
     # make sure that REM is displayed after Wake
-    hypno = pd.Series(hypno).map({0: 5, 1: 3, 2: 2, 3: 1, 4: 4}).values
+    if sleeping_stage == WAKE:
+        hypno = pd.Series(hypno).map({0: 5, 1: 0, 2: 0, 3: 0, 4: 0}).values
+    elif sleeping_stage == REM:
+        hypno = pd.Series(hypno).map({0: 0, 1: 0, 2: 0, 3: 0, 4: 5}).values
+    else:
+        hypno = pd.Series(hypno).map({0: 5, 1: 3, 2: 2, 3: 1, 4: 4}).values
 
     # reduce data and bin edges to only moments of change in the hypnogram
     # (to avoid drawing thousands of tiny individual lines when sf is high)
@@ -43,7 +50,7 @@ def add_hypnogram_to_fig(subject: Subject, ax, number_of_channels: int):
     ax2 = ax.twiny()
     ax2.tick_params(top=False, labeltop=False, left=False, labelleft=False, right=False, labelright=False, bottom=False,
                     labelbottom=False)
-    ax.stairs(number_of_channels / 5 * hypno.clip(0), bins, fill=True, color='#DCDCDC')
+    ax.stairs(number_of_channels / 5 * hypno.clip(0), bins, fill=True, color=color)
 
 
 def add_histogram_to_fig(ax, channels_data: List[np.ndarray]):
@@ -67,8 +74,8 @@ def add_histogram_to_fig(ax, channels_data: List[np.ndarray]):
 
 
 # based on https://pythontic.com/visualization/charts/spikerasterplot
-def create_raster_plot(subject: Subject, spikes: Dict[str, np.ndarray],
-                       add_histogram: bool = True, add_hypnogram: bool = True, show: bool = False):
+def create_raster_plot(subject: Subject, spikes: Dict[str, np.ndarray], add_histogram: bool = True,
+                       add_hypnogram: bool = True, cut_hypnogram: bool = True, show: bool = False):
     channels_name = list(spikes.keys())
     channels_data = list(spikes.values())
 
@@ -86,7 +93,7 @@ def create_raster_plot(subject: Subject, spikes: Dict[str, np.ndarray],
     channels_name.reverse()
     channels_data.reverse()
 
-    if add_hypnogram:
+    if add_hypnogram and cut_hypnogram:
         # cuts the spikes data, so the plot will contain only spikes of the first sleep cycle
         start, end = sleeping_utils.get_timestamps_in_seconds_of_first_rem_sleep(subject)
         channels_data = list(map(lambda x: x[np.where(np.logical_and(x >= start, x <= end))] - start, channels_data))
@@ -100,6 +107,7 @@ def create_raster_plot(subject: Subject, spikes: Dict[str, np.ndarray],
         linelengths=[0.3]*len(channels_data),
         linewidth=[2]*len(channels_data)
     )
+    ax.margins(x=0.005, y=0.005)
 
     # set y axis labels
     yticks = []
@@ -118,17 +126,34 @@ def create_raster_plot(subject: Subject, spikes: Dict[str, np.ndarray],
 
     # set x axis labels values to minutes
     xticks = ax.get_xticklabels()
-    [tick.set_text(int(tick.get_text()) // 60) for tick in xticks[1:]]
-    ax.set_xticklabels(xticks)
-    plt.xlabel('Minutes')
+    xticks_values = [int(tick.get_text()) for tick in xticks[1:]]
+
+    # if the plot is more than 2 hours the labels will be hours and not minutes
+    if max(xticks_values) > 120*60:
+        ax.set(
+            xticklabels=[t / 3600 for t in range(0, max(xticks_values), 3600)],
+            xticks=[t for t in range(0, max(xticks_values), 3600)]
+        )
+        plt.xlabel('Hours')
+    else:
+        [tick.set_text(int(tick.get_text()) // 60) for tick in xticks[1:]]
+        ax.set_xticklabels(xticks)
+        plt.xlabel('Minutes')
 
     # set plot proportions
     fig.set_figwidth(14)
     fig.set_figheight(7)
 
     if add_hypnogram:
-        add_hypnogram_to_fig(subject, ax, len(channels_data))
-        plt.savefig(subject.paths.subject_hypno_raster_plot_path, dpi=1000)
+        add_hypnogram_to_fig(subject, ax, len(channels_data), WAKE, '#DCDCDC', cut_hypnogram)
+        add_hypnogram_to_fig(subject, ax, len(channels_data), REM, '#CBE9F8', cut_hypnogram)
+        wake_patch = mpatches.Patch(color='#DCDCDC', label='Wake')
+        rem_patch = mpatches.Patch(color='#CBE9F8', label='REM')
+        ax.legend(handles=[wake_patch, rem_patch], bbox_to_anchor=(1.15, 1.25))
+        if cut_hypnogram:
+            plt.savefig(subject.paths.subject_cut_hypno_raster_plot_path, dpi=1000)
+        else:
+            plt.savefig(subject.paths.subject_hypno_raster_plot_path, dpi=1000)
     else:
         plt.savefig(subject.paths.subject_raster_plot_path, dpi=1000)
 
@@ -141,21 +166,22 @@ def create_ERP_plot(subject: Subject, channel_raw: mne.io.Raw, channel_data: np.
     """
     channel_data: is a (N,) np array with the MNE channel (it can be filtred, etc..)
     """
-    epochs = utils.create_epochs(channel_raw, channel_data, spikes)
+    epochs = utils.create_epochs(channel_raw, channel_data, spikes, -1, 1)
     fig = epochs.plot_image(
         show=show,
         picks=[channel_name],
         vmin=-150,
         vmax=150,
-        title=f'{subject.name}-{channel_name}-ERP'
+        title=f'{subject.name} {channel_name} ERP\nn={len(spikes)}'
     )[0]
     fig.savefig(os.path.join(subject.paths.subject_erp_plots_dir_path, f'{subject.name}-{channel_name}.png'),  dpi=1000)
 
 
 def create_TFR_plot(subject: Subject, channel_raw: mne.io.Raw, channel_data: np.ndarray,
                     spikes: np.ndarray, channel_name: str, show: bool = False):
+    print(channel_raw)
     epochs = utils.create_epochs(channel_raw, channel_data, spikes, -1, 1)
-    freqs = np.logspace(*np.log10([LOW_THRESHOLD_FREQUENCY, HIGH_THRESHOLD_FREQUENCY]), num=100)
+    freqs = np.logspace(*np.log10([LOW_THRESHOLD_FREQUENCY, 250]), num=100)
     power, _ = tfr_morlet(
         inst=epochs,
         freqs=freqs,
@@ -170,19 +196,46 @@ def create_TFR_plot(subject: Subject, channel_raw: mne.io.Raw, channel_data: np.
         show=show,
         mode='logratio',
         baseline=(-1, 1),
-        title=f'{subject.name}-{channel_name}-TFR'
+        title=f'{subject.name} {channel_name} TFR\nn={len(spikes)}'
     )
     plt.savefig(os.path.join(subject.paths.subject_tfr_plots_dir_path, f'{subject.name}-{channel_name}.png'),  dpi=1000)
 
 
-def create_PSD_plot(subject: Subject, channel_raw: mne.io.Raw, channel_name: str, show: bool = False):
-    spectrum = channel_raw.compute_psd(
+def create_PSD_plot(subject: Subject, channel_raw: mne.io.Raw, channel_data: np.ndarray,
+                    spikes: np.ndarray, channel_name: str, show: bool = False):
+    fig, ax = plt.subplots(2)
+    channel_raw.plot_psd(
         fmin=0,
         fmax=250,
         picks=[channel_name],
-    )
-    spectrum.plot(
+        ax=ax[0],
         show=show,
     )
-    plt.title(f'{subject.name}-{channel_name}-PSD')
+    epochs = utils.create_epochs(channel_raw, channel_data, spikes, -1, 1)
+    epochs.plot_psd(
+        fmin=0,
+        fmax=250,
+        ax=ax[1],
+        show=show
+    )
+    ax[0].set_title(f'{subject.name} {channel_name} PSD - raw')
+    ax[0].set_xlabel('Frequency (Hz)')
+    ax[1].set_title(f'{subject.name} {channel_name} PSD - {len(spikes)} events')
+    ax[1].set_xlabel('Frequency (Hz)')
+    fig.tight_layout()
     plt.savefig(os.path.join(subject.paths.subject_psd_plots_dir_path, f'{subject.name}-{channel_name}.png'),  dpi=1000)
+
+
+def create_channel_features_histograms(subject: Subject, channel_data: np.ndarray,
+                                       spikes: np.ndarray, channel_name: str):
+    _, amplitudes, lengths = utils.extract_spikes_features(channel_data, spikes)
+
+    fig, ax = plt.subplots(2)
+    ax[0].hist(amplitudes, bins='auto')
+    ax[0].set_title(f'{subject.name} {channel_name} - Amplitudes Histogram\nn={len(spikes)}')
+    ax[0].set_xlabel('Zscore')
+    ax[1].hist(lengths, bins='auto')
+    ax[1].set_title(f'{subject.name} {channel_name} - Lengths Histogram\nn={len(spikes)}')
+    ax[1].set_xlabel('Msec')
+    fig.tight_layout()
+    plt.savefig(os.path.join(subject.paths.subject_histogram_plots_dir_path, f'{subject.name}-{channel_name}.png'),  dpi=1000)

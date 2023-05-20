@@ -35,8 +35,3 @@ def get_timestamps_in_seconds_of_first_rem_sleep(subject: Subject) -> Tuple[int,
     start_timestamp = start_index*HYPNOGRAM_SAMPLES_INTERVAL_IN_SECONDS - TIME_IN_MINUTES_BEFORE_SLEEP_START*60
     end_timestamp = end_index*HYPNOGRAM_SAMPLES_INTERVAL_IN_SECONDS + TIME_IN_MINUTES_AFTER_REM_END*60
     return start_timestamp, end_timestamp
-
-
-if __name__ == "__main__":
-    subject = Subject(SUBJECT)
-    print(get_hypnogram_indexes_of_first_rem_sleep(subject))
