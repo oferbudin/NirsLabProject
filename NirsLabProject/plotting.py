@@ -73,6 +73,10 @@ def add_histogram_to_fig(ax, channels_data: List[np.ndarray]):
     ax_histogram_x.hist(x, bins=bins)
 
 
+def get_model_name(subject: Subject) -> str:
+    return f"{'bipolar' if subject.bipolar_model else 'one channel'} model"
+
+
 # based on https://pythontic.com/visualization/charts/spikerasterplot
 def create_raster_plot(subject: Subject, spikes: Dict[str, np.ndarray], add_histogram: bool = True,
                        add_hypnogram: bool = True, cut_hypnogram: bool = True, show: bool = False):
@@ -82,7 +86,7 @@ def create_raster_plot(subject: Subject, spikes: Dict[str, np.ndarray], add_hist
     # set plot size and locations
     fig = plt.figure(layout='constrained')
     ax = fig.add_gridspec(top=0.75, right=0.75).subplots()
-    plt.title(subject.name)
+    plt.title(f"{subject.name} raster - {get_model_name(subject)}")
 
     # assign a different color for every channel's group (same electrod2)
     channels_color = get_channel_names_and_color(channels_name)
@@ -162,27 +166,26 @@ def create_raster_plot(subject: Subject, spikes: Dict[str, np.ndarray], add_hist
         plt.show()
 
 
-def create_ERP_plot(subject: Subject, channel_raw: mne.io.Raw, channel_data: np.ndarray,
+def create_ERP_plot(subject: Subject, channel_raw: mne.io.Raw,
                     spikes: np.ndarray, channel_name: str, show: bool = False):
     """
     channel_data: is a (N,) np array with the MNE channel (it can be filtred, etc..)
     """
-    epochs = utils.create_epochs(channel_raw, channel_data, spikes, -1, 1)
+    epochs = utils.create_epochs(channel_raw, spikes, -1, 1)
     fig = epochs.plot_image(
         show=show,
         picks=[channel_name],
         vmin=-150,
         vmax=150,
-        title=f'{subject.name} {channel_name} ERP\nn={len(spikes)}'
+        title=f'{subject.name} {channel_name} ERP\nn={len(spikes)} - {get_model_name(subject)}'
     )[0]
     fig.savefig(os.path.join(subject.paths.subject_erp_plots_dir_path, f'{subject.name}-{channel_name}.png'),  dpi=1000)
 
 
-def create_TFR_plot(subject: Subject, channel_raw: mne.io.Raw, channel_data: np.ndarray,
+def create_TFR_plot(subject: Subject, channel_raw: mne.io.Raw,
                     spikes: np.ndarray, channel_name: str, show: bool = False):
-    print(channel_raw)
-    epochs = utils.create_epochs(channel_raw, channel_data, spikes, -1, 1)
-    freqs = np.logspace(*np.log10([LOW_THRESHOLD_FREQUENCY, 250]), num=100)
+    epochs = utils.create_epochs(channel_raw, spikes, -1, 1)
+    freqs = np.logspace(*np.log10([5, 250]), num=100)
     power, _ = tfr_morlet(
         inst=epochs,
         freqs=freqs,
@@ -197,14 +200,15 @@ def create_TFR_plot(subject: Subject, channel_raw: mne.io.Raw, channel_data: np.
         show=show,
         mode='logratio',
         baseline=(-1, 1),
-        title=f'{subject.name} {channel_name} TFR\nn={len(spikes)}'
+        title=f'{subject.name} {channel_name} TFR\nn={len(spikes)} - {get_model_name(subject)}'
     )
     plt.savefig(os.path.join(subject.paths.subject_tfr_plots_dir_path, f'{subject.name}-{channel_name}.png'),  dpi=1000)
 
 
-def create_PSD_plot(subject: Subject, channel_raw: mne.io.Raw, channel_data: np.ndarray,
+def create_PSD_plot(subject: Subject, channel_raw: mne.io.Raw,
                     spikes: np.ndarray, channel_name: str, show: bool = False):
     fig, ax = plt.subplots(2)
+    fig.set_size_inches(5, 10)
     channel_raw.plot_psd(
         fmin=0,
         fmax=250,
@@ -212,16 +216,16 @@ def create_PSD_plot(subject: Subject, channel_raw: mne.io.Raw, channel_data: np.
         ax=ax[0],
         show=show,
     )
-    epochs = utils.create_epochs(channel_raw, channel_data, spikes, -1, 1)
+    epochs = utils.create_epochs(channel_raw, spikes, -1, 1)
     epochs.plot_psd(
         fmin=0,
         fmax=250,
         ax=ax[1],
-        show=show
+        show=show,
     )
-    ax[0].set_title(f'{subject.name} {channel_name} PSD - raw')
+    ax[0].set_title(f'{subject.name} {channel_name} PSD - raw - {get_model_name(subject)}')
     ax[0].set_xlabel('Frequency (Hz)')
-    ax[1].set_title(f'{subject.name} {channel_name} PSD - {len(spikes)} events')
+    ax[1].set_title(f'{subject.name} {channel_name} PSD - {len(spikes)} events - {get_model_name(subject)}')
     ax[1].set_xlabel('Frequency (Hz)')
     fig.tight_layout()
     plt.savefig(os.path.join(subject.paths.subject_psd_plots_dir_path, f'{subject.name}-{channel_name}.png'),  dpi=1000)
@@ -229,14 +233,14 @@ def create_PSD_plot(subject: Subject, channel_raw: mne.io.Raw, channel_data: np.
 
 def create_channel_features_histograms(subject: Subject, channel_data: np.ndarray,
                                        spikes: np.ndarray, channel_name: str):
-    _, amplitudes, lengths = utils.extract_spikes_features(channel_data, spikes)
+    amplitudes, lengths = utils.extract_spikes_features(channel_data, spikes)
 
     fig, ax = plt.subplots(2)
     ax[0].hist(amplitudes, bins='auto')
-    ax[0].set_title(f'{subject.name} {channel_name} - Amplitudes Histogram\nn={len(spikes)}')
+    ax[0].set_title(f'{subject.name} {channel_name} - Amplitudes Histogram\nn={len(spikes)} - {get_model_name(subject)}')
     ax[0].set_xlabel('Zscore')
     ax[1].hist(lengths, bins='auto')
-    ax[1].set_title(f'{subject.name} {channel_name} - Lengths Histogram\nn={len(spikes)}')
+    ax[1].set_title(f'{subject.name} {channel_name} - Lengths Histogram\nn={len(spikes)} - {get_model_name(subject)}')
     ax[1].set_xlabel('Msec')
     fig.tight_layout()
     plt.savefig(os.path.join(subject.paths.subject_histogram_plots_dir_path, f'{subject.name}-{channel_name}.png'),  dpi=1000)
