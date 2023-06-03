@@ -148,8 +148,9 @@ def create_raster_plot(subject: Subject, spikes: Dict[str, np.ndarray], add_hist
         add_hypnogram_to_fig(subject, ax, len(channels_data), WAKE, '#DCDCDC', cut_hypnogram)
         add_hypnogram_to_fig(subject, ax, len(channels_data), REM, '#CBE9F8', cut_hypnogram)
         wake_patch = mpatches.Patch(color='#DCDCDC', label='Wake')
+        nrem_patch = mpatches.Patch(color='white', label='NREM')
         rem_patch = mpatches.Patch(color='#CBE9F8', label='REM')
-        ax.legend(handles=[wake_patch, rem_patch], bbox_to_anchor=(1.15, 1.25))
+        ax.legend(handles=[wake_patch, nrem_patch, rem_patch], bbox_to_anchor=(1.15, 1.25))
         if cut_hypnogram:
             plt.savefig(subject.paths.subject_cut_hypno_raster_plot_path, dpi=1000)
         else:
