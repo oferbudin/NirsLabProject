@@ -7,13 +7,16 @@ DIVISION_FACTOR = 4
 
 SPIKE_RANGE_SECONDS = .25
 
-LOW_THRESHOLD_FREQUENCY = 0.1
-HIGH_THRESHOLD_FREQUENCY = 50
+LOW_THRESHOLD_FREQUENCY = 5
+HIGH_THRESHOLD_FREQUENCY = 250
 
 # based on https://academic.oup.com/brain/article/146/5/1903/7024726
 MAX_SPIKE_LENGTH_MILLISECONDS = 50
 
 MIN_AMPLITUDE_Z_SCORE = 3
+
+# https://academic.oup.com/brain/article/146/5/1903/7024726
+SPIKES_GROUPING_WINDOW_SIZE = 100
 
 # -------------------------------------------- Sleeping ----------------------------------------------------------------
 

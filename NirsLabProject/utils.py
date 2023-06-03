@@ -43,7 +43,7 @@ def get_data_of_spike_in_range(channel_data: np.ndarray, spike_timestamp: float)
 
 # Spike index in the channel data
 def get_spike_index(channel_data: np.ndarray, spike_timestamp: float) -> int:
-    spike_data, spike_start_index, _ = get_data_of_spike_in_range(channel_data, spike_timestamp)
+    spike_data, spike_start_index, _end = get_data_of_spike_in_range(channel_data, spike_timestamp)
 
     peaks, _ = find_peaks(spike_data)
     spikes = map(lambda peak: extract_spike_features(spike_data, peak), peaks)
@@ -68,9 +68,8 @@ def get_real_spikes_indexs(channel_data: np.ndarray, spikes: np.ndarray):
     return spikes
 
 
-def create_epochs(channel_raw: mne.io.Raw, channel_data: np.ndarray, spikes: np.ndarray,
+def create_epochs(channel_raw: mne.io.Raw, spikes: np.ndarray,
                   tmin=-SPIKE_RANGE_SECONDS, tmax=SPIKE_RANGE_SECONDS) -> mne.Epochs:
-    spikes = get_real_spikes_indexs(channel_data, spikes)
     zeros = np.zeros((spikes.shape[0], 2), dtype=int)
     spikes = np.hstack((spikes, zeros))
     indices = np.arange(spikes.shape[0]).reshape(-1, 1)
@@ -96,7 +95,6 @@ def pick_seeg_channels(raw: mne.io.Raw) -> int:
 
 
 def extract_spikes_features(channel_data: np.ndarray, spikes: np.ndarray) -> Tuple:
-    spikes = get_real_spikes_indexs(channel_data, spikes)
     spikes = np.unique(spikes).flatten()
 
     # Vectorized feature extraction using np.vectorize
@@ -108,4 +106,4 @@ def extract_spikes_features(channel_data: np.ndarray, spikes: np.ndarray) -> Tup
     peaks = np.array([d['amplitude'] for d in features_array])
     lengths = np.array([d['length'] for d in features_array])
 
-    return indexes, peaks, lengths
+    return peaks, lengths

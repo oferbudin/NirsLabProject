@@ -10,6 +10,8 @@ import scipy.stats as sp_stats
 from scipy.integrate import simps
 from typing import List, Dict, Tuple
 from sklearn.preprocessing import robust_scale
+from joblib import Parallel, delayed
+
 
 from NirsLabProject import utils
 from NirsLabProject.config.consts import *
@@ -274,10 +276,19 @@ def save_detection_to_npz_file(detections: Dict[str, np.ndarray], subject: Subje
     np.savez(subject.paths.subject_spikes_path, **detections)
 
 
-def detect_spikes_of_subject(subject: Subject, raw: mne.io.Raw, bipolar_model: bool = True, sleep_cycle_data: bool = False) -> dict:
+def detect_spikes_of_subject_for_specific_channels(subject: Subject, raw: mne.io.Raw, channels: list, model) -> Dict[str, np.ndarray]:
+    s = time.time()
+    print(f'Detecting spikes for channels {channels}')
+    channel_raw = raw.copy().pick_channels(channels)
+    channel_spikes = model.detect_spikes(channel_raw, subject)
+    print(f'Finished detecting spikes for channels {channels} | Took {time.time() - s}')
+    return {channels[0]: channel_spikes}
+
+
+def detect_spikes_of_subject(subject: Subject, raw: mne.io.Raw, sleep_cycle_data: bool = False) -> dict:
 
     if os.path.exists(subject.paths.subject_spikes_path):
-        return np.load(subject.paths.subject_spikes_path)
+        return np.load(subject.paths.subject_spikes_path, allow_pickle=True)
 
     if sleep_cycle_data:
         start_timestamp, end_timestamp = sleeping_utils.get_timestamps_in_seconds_of_first_rem_sleep(subject)
@@ -292,13 +303,11 @@ def detect_spikes_of_subject(subject: Subject, raw: mne.io.Raw, bipolar_model: b
 
     spikes = {}
     # run on each channel and detect the spikes between stims
-    for channels in all_channels:
-        s = time.time()
-        print(f'Detecting spikes for channels {channels}')
-        bi_raw = raw.copy().pick_channels(channels)
-        channel_spikes = model.detect_spikes(bi_raw, subject)
-        spikes[channels[0]] = channel_spikes
-        print(f'Finished detecting spikes for channels {channels} | Took {time.time() - s}')
+    channels_spikes = Parallel(n_jobs=os.cpu_count(), backend='multiprocessing')(
+        delayed(detect_spikes_of_subject_for_specific_channels)(subject, raw, channels, model) for channels in all_channels
+    )
 
+    for d in channels_spikes:
+        spikes.update(d)
     save_detection_to_npz_file(spikes, subject)
     return spikes
