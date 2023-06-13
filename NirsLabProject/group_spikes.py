@@ -133,28 +133,85 @@ class MinHeap:
         return np.asarray(result)
 
 
-def group_spikes(channels_spikes: Dict[str, np.ndarray]):
-    all_spikes = []
+class Group:
+    def __init__(self, group: List[np.ndarray], group_index: int, index_to_channel: Dict[int, str]):
+        self._group = group
+        self.index = group_index
+        self.size = len(group)
+        self.fist_event_timestamp = group[0][TIMESTAMP_INDEX]
+        self.last_event_timestamp = group[-1][TIMESTAMP_INDEX]
+        self.group_event_duration = self.last_event_timestamp - self.fist_event_timestamp
+
+        # sorting all the timestamps with the same timestamp of the first event by amlitude
+        self.focal_channnel_index = sorted(
+            [spike for spike in group if spike[0] == self.fist_event_timestamp],
+            key=lambda x: (x[1], x[2])
+        )[-1][1]
+        self.focal_channnel_name = index_to_channel[self.focal_channnel_index]
+
+        self.hemispheres = set()
+        self.structures = set()
+
+        _electrode_depths = set()
+        for record in group:
+            channel = index_to_channel[record[1]]
+            _electrode_depths.add(channel[-1])
+            # adds the hemisphere 'L' or 'R' and the structure 'HPC', 'EC' etc...
+            self.hemispheres.add(channel[0])
+            self.structures.add(channel[:-1])
+
+        self.deepest_electrode = min(_electrode_depths)
+        self.shallowest_electrode = max(_electrode_depths)
+
+
+    def calculate_group_spatial_spread(self):
+        # TODO: Implement
+        pass
+
+    def get_features(self):
+        return np.asarray([self.size, self.group_event_duration, self.deepest_electrode, self.shallowest_electrode])
+
+    def __str__(self):
+        return f'Group size {self.size} | Focal: {self.focal_channnel_name} | Hemisphers: {self.hemispheres} | Stractures: {self.structures} | Time Difrences: {self.group_event_duration}'
+
+
+def group_spikes(channels_spikes_features: Dict[str, np.ndarray]):
     index_to_channel = {}
-    for i, channel_name in enumerate(channels_spikes.keys()):
-        channel_spikes = channels_spikes[channel_name]
-        all_spikes.append(np.concatenate([channel_spikes, np.full((channel_spikes.shape[0], 1), i)], axis=1))
+    for i, channel_name in enumerate(channels_spikes_features.keys()):
         index_to_channel[i] = channel_name
 
+    # Merge all the spikes into one sorted array
+    all_spikes = [spikes for spikes in channels_spikes_features.values() if spikes.shape[0] > 0]
     all_spikes_flat = MinHeap.mergeKSortedArrays(all_spikes, len(all_spikes))
 
     # Group the timestamps based on the window_width
-    groups = []
-    group = [all_spikes_flat[0]]
+    groups_list = []
+    group_index_to_group = {}
+    group = [all_spikes_flat[TIMESTAMP_INDEX]]
     for i in range(1, all_spikes_flat.shape[0]):
-        if group[0][0] + SPIKES_GROUPING_WINDOW_SIZE > all_spikes_flat[i][0]:
+        # If the next spike is in the window add it to the group
+        if group[0][TIMESTAMP_INDEX] + SPIKES_GROUPING_WINDOW_SIZE > all_spikes_flat[i][TIMESTAMP_INDEX]:
             group.append(all_spikes_flat[i])
         else:
-            groups.append(group)
+            # window is over, start a new group
+            groups_list.append(group)
             group = [all_spikes_flat[i, :]]
+    # Add the last group
+    groups_list.append(group)
 
-    for group in groups:
-        print('Group:')
-        for record in group:
-            print(f'Timestamp: {record[0]} - channel {index_to_channel[record[1]]}')
-        print('\n')
+    spike_index = 0
+    all_spikes_group_indexes = np.zeros(all_spikes_flat.shape[0], dtype=int)
+    # Create a group object for each group
+    for group_index, group in enumerate(groups_list):
+        group = Group(group, group_index, index_to_channel)
+        group_index_to_group[group_index] = group
+        for i in range(group.size):
+            # Add the group index to the spikes features
+            all_spikes_group_indexes[spike_index] = group.index
+            spike_index += 1
+
+    # Add the group index to the spikes array
+    all_spikes_group_indexes = all_spikes_group_indexes.reshape((-1, 1))
+    all_spikes_flat = np.concatenate((all_spikes_flat, all_spikes_group_indexes), axis=1)
+
+    return group_index_to_group, all_spikes_flat

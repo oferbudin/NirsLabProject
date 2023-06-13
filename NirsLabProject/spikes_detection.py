@@ -33,12 +33,11 @@ class Model:
         (30, 100, 'gamma'), (100, 300, 'fast')
     ]
 
-    def calculate_standart_descriptive_statistics (self, epochs: np.ndarray, subject_name: str):
+    def calculate_standart_descriptive_statistics (self, epochs: np.ndarray):
         # Calculate standard descriptive statistics
         hmob, hcomp = ant.hjorth_params(epochs, axis=1)
 
         feat = {
-            'subj': np.full(len(epochs), subject_name),
             'epoch_id': np.arange(len(epochs)),
             'std': np.std(epochs, ddof=1, axis=1),
             'iqr': sp_stats.iqr(epochs, axis=1),
@@ -78,7 +77,6 @@ class Model:
         return feat
 
     def add_power_ratio(self, feat: np.ndarray):
-        print('add_power_ratio')
         pass
 
     def bandpower_from_psd_ndarray(self, psd, freqs, bands, relative=True):
@@ -131,7 +129,7 @@ class Model:
         return bp
 
     def calc_features(self, epochs: np.ndarray, subject_name: str):
-        feat = self.calculate_standart_descriptive_statistics(epochs, subject_name)
+        feat = self.calculate_standart_descriptive_statistics(epochs)
         freqs, psd = self.calculate_spectral_power_features(epochs, feat)
         self.add_power_ratio(feat)
 
@@ -143,27 +141,37 @@ class Model:
         feat = self.smoothing_and_normalization(feat)
         return feat
 
-    def channel_feat(self, features: pd.DataFrame, raw: mne.io.Raw, channel: str):
+    def channel_feat(self, features: pd.DataFrame, raw: mne.io.Raw, channel: str) :
         pass
 
-    def format_raw(self, raw: mne.io.Raw):
+    def format_raw(self, raw: mne.io.Raw) -> np.ndarray:
+        # must override in child class
         raise NotImplementedError
 
-    def detect_spikes(self, raw: mne.io.Raw, subject: Subject) -> np.ndarray:
+    def predict(self, raw: mne.io.Raw, subject: Subject) -> np.ndarray:
+        # format the raw data
         x = self.format_raw(raw)
+
+        # calculate the features
         features = self.calc_features(x, subject.name)
         self.channel_feat(features, raw, raw.ch_names[0])
 
-        # check nans
+        # check for nans
         features = np.nan_to_num(features[self.model_lgbm.feature_name_])
+
+        # predict using the models
         y_lgbm = self.model_lgbm.predict(features)
         y_rf = self.model_rf.predict(features)
+
+        # combine the predictions
         y = np.array(y_lgbm) + np.array(y_rf)
         y[y == 2] = 1
+
         spikes_onsets = np.where(y == 1)[0] / DIVISION_FACTOR
         return spikes_onsets
 
 
+# Bipolar model class for bipolar montage data - subtracting two consecutive channels
 class BipolarModel(Model):
     model_lgbm = joblib.load(os.path.join(Paths.models_dir_path, 'LGBM_V1.pkl'))
     model_rf = joblib.load(os.path.join(Paths.models_dir_path, 'RF_V1.pkl'))
@@ -183,7 +191,7 @@ class BipolarModel(Model):
         # Add to current set of features
         return feat.join(roll1).join(roll3)
 
-    def add_power_ratio(self, feat: np.ndarray):
+    def add_power_ratio(self, feat: dict):
         # Add power ratios for EEG
         delta = feat['delta']
         feat['dt'] = delta / feat['theta']
@@ -228,6 +236,7 @@ class BipolarModel(Model):
         return bi_channels
 
 
+# One channel model class that uses the raw data of one channel for prediction
 class UniChannelModel(Model):
     model_lgbm = joblib.load(os.path.join(Paths.models_dir_path, 'LGBM_V2.pkl'))
     model_rf = joblib.load(os.path.join(Paths.models_dir_path, 'RF_V2.pkl'))
@@ -252,7 +261,7 @@ class UniChannelModel(Model):
         for feat in ch_feat.keys():
             features[feat] = ch_feat[feat]
 
-    def format_raw(self, raw):
+    def format_raw(self, raw: mne.io.Raw) -> np.ndarray:
         epochs = []
         window_size = int(SR / DIVISION_FACTOR)
         raw.load_data()
@@ -272,15 +281,46 @@ class UniChannelModel(Model):
 
 
 def save_detection_to_npz_file(detections: Dict[str, np.ndarray], subject: Subject):
-    print(f"Saving detections for subject {subject.name}")
+    print(f"Saving detections of subject {subject.name}")
     np.savez(subject.paths.subject_spikes_path, **detections)
+
+
+def handle_stimuli(model, raw: mne.io.Raw, subject: Subject) -> np.ndarray:
+    spikes = np.asarray([])
+
+    stim_sections_sec = utils.get_stimuli_time_windows(subject)
+    stim_start_sec = stim_sections_sec[0][0]
+
+    # get all raw data until the first stim
+    baseline_raw = raw.copy().crop(tmin=0, tmax=stim_start_sec)
+    spikes = np.concatenate((spikes, model.predict(baseline_raw, subject)), axis=0)
+
+    # fill sections of stim and the stops between
+    for i, (start, end) in enumerate(stim_sections_sec):
+        # fill the current stim
+        raw_without_stim = utils.remove_stimuli_from_raw(subject, raw.copy().crop(tmin=start, tmax=end), start, end)
+        new_spikes = start + model.predict(raw_without_stim, subject)
+        spikes = np.concatenate((spikes, new_spikes), axis=0)
+        if i + 1 < len(stim_sections_sec):
+            # the stop is the time between the end of the curr section and the start of the next, buffer of 0.5 sec of the stim
+            next_data = raw.copy().crop(tmin=end + 0.5, tmax=stim_sections_sec[i + 1][0] - 0.5)
+            new_spikes = end + 0.5 + model.predict(next_data, subject)
+            spikes = np.concatenate((spikes, new_spikes), axis=0)
+        else:
+            data_to_the_end = raw.copy().crop(tmin=end + 0.5, tmax=raw.tmax)
+            new_spikes = end + 0.5 + model.predict(data_to_the_end, subject)
+            spikes = np.concatenate((spikes, new_spikes), axis=0)
+    return spikes
 
 
 def detect_spikes_of_subject_for_specific_channels(subject: Subject, raw: mne.io.Raw, channels: list, model) -> Dict[str, np.ndarray]:
     s = time.time()
     print(f'Detecting spikes for channels {channels}')
-    channel_raw = raw.copy().pick_channels(channels)
-    channel_spikes = model.detect_spikes(channel_raw, subject)
+    channels_raw = raw.copy().pick_channels(channels)
+    if os.path.exists(subject.paths.subject_stimuli_path):
+        channel_spikes = handle_stimuli(model, channels_raw, subject)
+    else:
+        channel_spikes = model.predict(channels_raw, subject)
     print(f'Finished detecting spikes for channels {channels} | Took {time.time() - s}')
     return {channels[0]: channel_spikes}
 

@@ -9,15 +9,6 @@ SLEEPING_CYCLE = {WAKE, N1, N2, N3, REM}
 OPTIONAL_STAGES = {WAKE, N1}
 
 
-def is_cycle_valid(cycle_sleeping_stages):
-    if not cycle_sleeping_stages:
-        return False
-    for stage in SLEEPING_CYCLE - OPTIONAL_STAGES:
-        if stage not in cycle_sleeping_stages:
-            return False
-    return True
-
-
 # TODO: improve - handle
 def get_hypnogram_indexes_of_first_rem_sleep(subject: Subject) -> Tuple[int, int]:
     hypnogram = np.loadtxt(subject.paths.subject_hypnogram_path)
