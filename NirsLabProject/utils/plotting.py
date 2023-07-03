@@ -279,29 +279,34 @@ def create_TFR_plot(subject: Subject, channel_raw: mne.io.Raw,
 # channel_raw must not be filtred
 def create_PSD_plot(subject: Subject, channel_raw: mne.io.Raw,
                     spikes_timestamps: np.ndarray, channel_name: str, show: bool = False):
-    fig, ax = plt.subplots(2)
-    fig.set_size_inches(5, 10)
-
+    fig = plt.figure(layout='constrained')
+    ax = fig.add_gridspec(top=0.75, right=0.75).subplots()
     # plot_psd is obsolete, but the new function plot_psd_topomap is not supporting fig saving
     channel_raw.plot_psd(
         fmin=0,
         fmax=250,
         picks=[channel_name],
-        ax=ax[0],
+        ax=ax,
         show=show,
+        spatial_colors=False
     )
     epochs = utils.create_epochs(channel_raw, spikes_timestamps, -1, 1)
     epochs.plot_psd(
         fmin=0,
         fmax=250,
-        ax=ax[1],
+        ax=ax,
         show=show,
+        spatial_colors=False,
+        color='red'
     )
-    ax[0].set_title(f'{subject.name} {channel_name} PSD - raw - {get_model_name(subject)}')
-    ax[0].set_xlabel('Frequency (Hz)')
-    ax[1].set_title(f'{subject.name} {channel_name} PSD - {len(spikes_timestamps)} events - {get_model_name(subject)}')
-    ax[1].set_xlabel('Frequency (Hz)')
-    fig.tight_layout()
+    ax.set_title(f'{subject.name} {channel_name} PSD - {get_model_name(subject)}')
+    ax.set_xlabel('Frequency (Hz)')
+    legend = [
+        mpatches.Patch(color='black', label='Raw'),
+        mpatches.Patch(color='red', label='Spike Event')
+    ]
+    ax.legend(handles=legend, bbox_to_anchor=(1, 1))
+    plt.tight_layout()
     plt.savefig(os.path.join(subject.paths.subject_psd_plots_dir_path, f'{subject.name}-{channel_name}.png'),  dpi=1000)
 
 
