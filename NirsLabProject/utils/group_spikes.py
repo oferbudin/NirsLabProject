@@ -2,6 +2,8 @@ import sys
 import numpy as np
 from typing import Dict, List
 
+import scipy
+
 from NirsLabProject.config.consts import *
 
 
@@ -136,18 +138,19 @@ class MinHeap:
 class Group:
     def __init__(self, group: List[np.ndarray], group_index: int, index_to_channel: Dict[int, str]):
         self._group = group
-        self.index = group_index
+        self.index = int(group_index)
         self.size = len(group)
         self.fist_event_timestamp = group[0][TIMESTAMP_INDEX]
         self.last_event_timestamp = group[-1][TIMESTAMP_INDEX]
         self.group_event_duration = self.last_event_timestamp - self.fist_event_timestamp
+        self.index_to_channel = index_to_channel
 
         # sorting all the timestamps with the same timestamp of the first event by amlitude
-        self.focal_channnel_index = sorted(
+        self.focal_channel_index = sorted(
             [spike for spike in group if spike[0] == self.fist_event_timestamp],
             key=lambda x: (x[1], x[2])
-        )[-1][1]
-        self.focal_channnel_name = index_to_channel[self.focal_channnel_index]
+        )[-1][CHANNEL_INDEX]
+        self.focal_channel_name = index_to_channel[self.focal_channel_index]
 
         self.hemispheres = set()
         self.structures = set()
@@ -163,22 +166,60 @@ class Group:
         self.deepest_electrode = min(_electrode_depths)
         self.shallowest_electrode = max(_electrode_depths)
 
+        self.group_spatial_spread = self.calculate_group_spatial_spread()
 
     def calculate_group_spatial_spread(self):
-        # TODO: Implement
-        pass
+
+        def polygon_area(poly):
+            # shape (N, 3)
+            if isinstance(poly, list):
+                poly = np.array(poly)
+            # all edges
+            edges = poly[1:] - poly[0:1]
+            # row wise cross product
+            cross_product = np.cross(edges[:-1], edges[1:], axis=1)
+            # area of all triangles
+            area = np.linalg.norm(cross_product, axis=1) / 2
+            return sum(area)
+
+        pts = np.array([g[CORD_X_INDEX:CORD_Z_INDEX + 1] for g in self._group if not np.isnan(g[CORD_X_INDEX])])
+        value = -1
+        if pts.shape[0] > 0:
+            if pts.shape[0] == 1:
+                value = 0
+            elif pts.shape[0] == 2:
+                value = np.linalg.norm(pts[0] - pts[1])
+            elif pts.shape[0] == 3:
+                value = polygon_area(pts)
+            else:
+                value = polygon_area(pts)
+                # try:
+                #     value = scipy.spatial.ConvexHull(pts).volume
+                # except:
+                #     print('ConvexHull failed')
+                #     value = polygon_area(pts)
+        if value > 2000:
+            value = 2000
+        return value
 
     def get_features(self):
         return np.asarray([self.size, self.group_event_duration, self.deepest_electrode, self.shallowest_electrode])
 
+    def print_group_electrodes(self):
+        for record in self._group:
+            print(self.index_to_channel[record[CHANNEL_INDEX]])
+
     def __str__(self):
-        return f'Group size {self.size} | Focal: {self.focal_channnel_name} | Hemisphers: {self.hemispheres} | Stractures: {self.structures} | Time Difrences: {self.group_event_duration}'
+        return f'Group size {self.size} | Focal: {self.focal_channel_name} | Hemisphers: {self.hemispheres} | Stractures: {self.structures} | Time Difrences: {self.group_event_duration}'
 
 
 def group_spikes(channels_spikes_features: Dict[str, np.ndarray]):
+    print('Grouping spikes')
+
     index_to_channel = {}
-    for i, channel_name in enumerate(channels_spikes_features.keys()):
-        index_to_channel[i] = channel_name
+    for channel_name in channels_spikes_features.keys():
+        index = channels_spikes_features[channel_name][0][CHANNEL_INDEX]
+        index_to_channel[index] = channel_name
 
     # Merge all the spikes into one sorted array
     all_spikes = [spikes for spikes in channels_spikes_features.values() if spikes.shape[0] > 0]
@@ -195,12 +236,18 @@ def group_spikes(channels_spikes_features: Dict[str, np.ndarray]):
         else:
             # window is over, start a new group
             groups_list.append(group)
-            group = [all_spikes_flat[i, :]]
+            group = [all_spikes_flat[i]]
     # Add the last group
     groups_list.append(group)
 
     spike_index = 0
     all_spikes_group_indexes = np.zeros(all_spikes_flat.shape[0], dtype=int)
+    all_spikes_group_focal_point = np.zeros(all_spikes_flat.shape[0], dtype=int)
+    all_spikes_group_event_duration = np.zeros(all_spikes_flat.shape[0], dtype=int)
+    all_spikes_group_event_size = np.zeros(all_spikes_flat.shape[0], dtype=int)
+    all_spikes_group_deepest_electrode = np.zeros(all_spikes_flat.shape[0], dtype=int)
+    all_spikes_group_shallowest_electrode = np.zeros(all_spikes_flat.shape[0], dtype=int)
+    all_spikes_group_group_spatial_spread = np.zeros(all_spikes_flat.shape[0], dtype=int)
     # Create a group object for each group
     for group_index, group in enumerate(groups_list):
         group = Group(group, group_index, index_to_channel)
@@ -208,10 +255,27 @@ def group_spikes(channels_spikes_features: Dict[str, np.ndarray]):
         for i in range(group.size):
             # Add the group index to the spikes features
             all_spikes_group_indexes[spike_index] = group.index
+            all_spikes_group_focal_point[spike_index] = group.focal_channel_index
+            all_spikes_group_event_duration[spike_index] = group.group_event_duration
+            all_spikes_group_event_size[spike_index] = group.size
+            all_spikes_group_deepest_electrode[spike_index] = group.deepest_electrode
+            all_spikes_group_shallowest_electrode[spike_index] = group.shallowest_electrode
+            all_spikes_group_group_spatial_spread[spike_index] = group.group_spatial_spread
             spike_index += 1
 
     # Add the group index to the spikes array
-    all_spikes_group_indexes = all_spikes_group_indexes.reshape((-1, 1))
-    all_spikes_flat = np.concatenate((all_spikes_flat, all_spikes_group_indexes), axis=1)
+    all_spikes_flat = np.concatenate(
+        (
+            all_spikes_flat,
+            all_spikes_group_indexes.reshape((-1, 1)),
+            all_spikes_group_focal_point.reshape((-1, 1)),
+            all_spikes_group_event_duration.reshape((-1, 1)),
+            all_spikes_group_event_size.reshape((-1, 1)),
+            all_spikes_group_deepest_electrode.reshape((-1, 1)),
+            all_spikes_group_shallowest_electrode.reshape((-1, 1)),
+            all_spikes_group_group_spatial_spread.reshape((-1, 1))
+        ),
+        axis=1
+    )
 
-    return group_index_to_group, all_spikes_flat
+    return group_index_to_group, all_spikes_flat, index_to_channel

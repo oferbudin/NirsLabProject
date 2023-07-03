@@ -1,10 +1,12 @@
 import os
 import warnings
+import mne
+
 
 from NirsLabProject.config.paths import Paths
 from NirsLabProject.config import consts
 
-
+mne.set_log_level('WARNING')
 warnings.filterwarnings('ignore')
 
 os.makedirs(Paths.raw_data_dir_path, exist_ok=True)

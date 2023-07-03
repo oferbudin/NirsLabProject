@@ -9,15 +9,15 @@ import scipy.signal as sp_sig
 import scipy.stats as sp_stats
 from scipy.integrate import simps
 from typing import List, Dict, Tuple
-from sklearn.preprocessing import robust_scale
 from joblib import Parallel, delayed
-
+from sklearn.preprocessing import robust_scale
 
 from NirsLabProject import utils
+from NirsLabProject.utils import sleeping_utils
 from NirsLabProject.config.consts import *
-from NirsLabProject import sleeping_utils
 from NirsLabProject.config.paths import Paths
 from NirsLabProject.config.subject import Subject
+
 
 mne.set_config('MNE_BROWSER_BACKEND', 'qt')
 
@@ -326,8 +326,9 @@ def detect_spikes_of_subject_for_specific_channels(subject: Subject, raw: mne.io
 
 
 def detect_spikes_of_subject(subject: Subject, raw: mne.io.Raw, sleep_cycle_data: bool = False) -> dict:
-
-    if os.path.exists(subject.paths.subject_spikes_path):
+    print(f'Detecting Intracranial spikes for subject {subject.name}')
+    if not FORCE_DETECT_SPIKES and os.path.exists(subject.paths.subject_spikes_path):
+        print(f'Spikes already detected for subject {subject.name}')
         return np.load(subject.paths.subject_spikes_path, allow_pickle=True)
 
     if sleep_cycle_data:

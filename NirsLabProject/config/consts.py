@@ -1,9 +1,18 @@
+# -------------------------------------------- RUN CONFIG -----------------------------------------------------------------
+
+FORCE_LOAD_EDF = False
+FORCE_DETECT_SPIKES = False
+FORCE_CALCULATE_SPIKES_FEATURES = True
+
 # -------------------------------------------- General -----------------------------------------------------------------
 
-SUBJECT = 'p406'
+STIMULI_PROJECT_FIRST_P_NUMBER = 485
 
 SR = 1000
 DIVISION_FACTOR = 4
+
+SCALP_MODEL_PROBABILITIES = 0.8
+SCALP_MODEL_NAME = 'lgbm_full_origin_70_19.pkl'
 
 SPIKE_RANGE_SECONDS = .25
 
@@ -12,9 +21,11 @@ HIGH_THRESHOLD_FREQUENCY = 250
 
 # based on https://academic.oup.com/brain/article/146/5/1903/7024726
 MAX_SPIKE_LENGTH_MILLISECONDS = 70
+MIN_SPIKE_LENGTH_MILLISECONDS = 20
+
 
 # In stimuli project might be 1 instead of 3
-MIN_AMPLITUDE_Z_SCORE = 3
+MIN_AMPLITUDE_Z_SCORE = 1
 
 # https://academic.oup.com/brain/article/146/5/1903/7024726
 SPIKES_GROUPING_WINDOW_SIZE = 100
@@ -56,3 +67,21 @@ CORD_Z_INDEX = 6
 
 # Additional features - added late
 GROUP_INDEX = 7
+GROUP_FOCAL_INDEX = 8
+GROUP_EVENT_DURATION_INDEX = 9
+GROUP_EVENT_SIZE_INDEX = 10
+GROUP_EVENT_DEEPEST_INDEX = 11
+GROUP_EVENT_SHALLOWEST_INDEX = 12
+GROUP_EVENT_SPATIAL_SPREAD_INDEX = 13
+IS_IN_SCALP_INDEX = 14
+STIMULI_FLAG_INDEX = 15
+HYPNOGRAM_FLAG_INDEX = 16
+
+STIMULI_FLAG_BEFORE_FIRST_STIMULI_SESSION = 0
+STIMULI_FLAG_DURING_STIMULI_SESSION = 1  # during stimuli session that have multiple windows
+STIMULI_FLAG_DURING_STIMULI_WINDOW = 2  # during a stimuli window
+STIMULI_FLAG_AFTER_STIMULI_SESSION = 3
+
+HYPNOGRAM_FLAG_REM_OR_WAKE = 0
+HYPNOGRAM_FLAG_NREM = 1
+# ----------------------------------------------------------------------------------------------------------------------
