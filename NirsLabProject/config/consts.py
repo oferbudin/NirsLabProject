@@ -2,11 +2,13 @@
 
 FORCE_LOAD_EDF = False
 FORCE_DETECT_SPIKES = False
-FORCE_CALCULATE_SPIKES_FEATURES = True
+FORCE_CALCULATE_SPIKES_FEATURES = False
 
 # -------------------------------------------- General -----------------------------------------------------------------
 
 STIMULI_PROJECT_FIRST_P_NUMBER = 485
+SOURASKY_PROJECT_LAST_P_NUMBER = 300
+
 
 SR = 1000
 DIVISION_FACTOR = 4
@@ -26,6 +28,7 @@ MIN_SPIKE_LENGTH_MILLISECONDS = 20
 
 # In stimuli project might be 1 instead of 3
 MIN_AMPLITUDE_Z_SCORE = 1
+MAX_AMPLITUDE_Z_SCORE = 30
 
 # https://academic.oup.com/brain/article/146/5/1903/7024726
 SPIKES_GROUPING_WINDOW_SIZE = 100
@@ -76,12 +79,16 @@ GROUP_EVENT_SPATIAL_SPREAD_INDEX = 13
 IS_IN_SCALP_INDEX = 14
 STIMULI_FLAG_INDEX = 15
 HYPNOGRAM_FLAG_INDEX = 16
+SUBJECT_NUMBER = 17
 
 STIMULI_FLAG_BEFORE_FIRST_STIMULI_SESSION = 0
-STIMULI_FLAG_DURING_STIMULI_SESSION = 1  # during stimuli session that have multiple windows
-STIMULI_FLAG_DURING_STIMULI_WINDOW = 2  # during a stimuli window
+STIMULI_FLAG_STIMULI_SESSION = 1  # during stimuli session that have multiple windows
+STIMULI_FLAG_DURING_STIMULI_BLOCK = 2  # during a stimuli window
 STIMULI_FLAG_AFTER_STIMULI_SESSION = 3
 
 HYPNOGRAM_FLAG_REM_OR_WAKE = 0
 HYPNOGRAM_FLAG_NREM = 1
 # ----------------------------------------------------------------------------------------------------------------------
+
+DETECTION_PROJECT_INTERSUBJECTS_SUBJECT_NAME = 'd2'
+STIMULI_PROJECT_INTERSUBJECTS_SUBJECT_NAME = 's1'

@@ -6,6 +6,7 @@ from typing import List, Dict, Tuple
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import matplotlib.colors as mcolors
+from matplotlib.ticker import LogFormatter
 from mne.time_frequency import tfr_morlet
 import scipy.io as sio
 from nilearn import plotting
@@ -79,7 +80,8 @@ def add_hypnogram_to_fig(subject: Subject, ax, number_of_channels: int, sleeping
         edges = np.arange(tmax)
         divide_by = 1000  # because sleep scoring is in milliseconds
     else:
-        raise Exception(f'No hypnogram or sleep score file found for subject {subject.subject_id}')
+        print(f'No hypnogram or sleep score file found for subject {subject.name}')
+        return
 
     # reduce data and bin edges to only moments of change in the hypnogram
     # (to avoid drawing thousands of tiny individual lines when sf is high)
@@ -177,6 +179,9 @@ def create_raster_plot(subject: Subject, tmin: float, tmax: float, spikes: Dict[
 
     # if the plot is more than 2 hours the labels will be hours and not minutes
     if max(xticks_values) > 120*60:
+        # if the last label is not close to the end of the plot, set it to be the end of the plot
+        if abs(xticks_values[-1] - tmax) >= 3600:
+            xticks_values[-1] = int(tmax)
         # set x axis labels values to hours
         ax.set(
             xticklabels=[t // 3600 for t in range(0, max(xticks_values), 3600)],
@@ -248,6 +253,8 @@ def create_ERP_plot(subject: Subject, channel_raw: mne.io.Raw,
         title=f'{subject.name} {channel_name} ERP\nn={len(spikes)} - {get_model_name(subject)}'
     )[0]
     fig.savefig(os.path.join(subject.paths.subject_erp_plots_dir_path, f'{subject.name}-{channel_name}.png'),  dpi=1000)
+    if show:
+        plt.show()
 
 
 @utils.catch_exception
@@ -273,10 +280,12 @@ def create_TFR_plot(subject: Subject, channel_raw: mne.io.Raw,
         title=f'{subject.name} {channel_name} TFR\nn={len(spikes_timestamps)} - {get_model_name(subject)}'
     )
     plt.savefig(os.path.join(subject.paths.subject_tfr_plots_dir_path, f'{subject.name}-{channel_name}.png'),  dpi=1000)
+    if show:
+        plt.show()
 
 
 @utils.catch_exception
-# channel_raw must not be filtred
+# channel_raw must not be filtered
 def create_PSD_plot(subject: Subject, channel_raw: mne.io.Raw,
                     spikes_timestamps: np.ndarray, channel_name: str, show: bool = False):
     fig = plt.figure(layout='constrained')
@@ -308,11 +317,13 @@ def create_PSD_plot(subject: Subject, channel_raw: mne.io.Raw,
     ax.legend(handles=legend, bbox_to_anchor=(1, 1))
     plt.tight_layout()
     plt.savefig(os.path.join(subject.paths.subject_psd_plots_dir_path, f'{subject.name}-{channel_name}.png'),  dpi=1000)
+    if show:
+        plt.show()
 
 
 @utils.catch_exception
 def create_channel_features_histograms(subject: Subject, amplitudes: np.ndarray,
-                                       lengths: np.ndarray, channel_name: str):
+                                       lengths: np.ndarray, channel_name: str, show: bool = False):
 
     fig, ax = plt.subplots(2)
     ax[0].hist(amplitudes, bins='auto')
@@ -323,7 +334,8 @@ def create_channel_features_histograms(subject: Subject, amplitudes: np.ndarray,
     ax[1].set_xlabel('Msec')
     fig.tight_layout()
     plt.savefig(os.path.join(subject.paths.subject_histogram_plots_dir_path, f'{subject.name}-{channel_name}.png'),  dpi=1000)
-
+    if show:
+        plt.show()
 
 # def show_electrodes(raw: mne.io.Raw, subject: Subject):
 #     cords = utils.calculate_coordinates()
@@ -412,7 +424,8 @@ def generate_color_gradient(values: list) -> dict:
 
     def get_color(value, min_value, max_value):
         # Normalize the value between 0 and 1
-        normalized_value = 1 - (value - min_value) / (max_value - min_value)
+        # normalized_value = 1 - (value - min_value) / (max_value - min_value)
+        normalized_value = (value - min_value) / (max_value - min_value)
 
         # Interpolate the hue value between red (0) and yellow (60) in the HSL color space
         hue = 0 + normalized_value * 240
@@ -428,7 +441,7 @@ def generate_color_gradient(values: list) -> dict:
 
 
 # feature must be in format: {'channel name': {'value': '', 'cords': ''}}
-def plot_feature_on_electrodes(subject: Subject, features: dict, name: str, unit: str = ''):
+def plot_feature_on_electrodes(subject: Subject, features: dict, name: str, unit: str = '', float_format: str = '.1f', marker_size: float = 10):
     values = [d['value'] for ch, d in features.items()]
     colors_plate = generate_color_gradient(values)
 
@@ -437,8 +450,8 @@ def plot_feature_on_electrodes(subject: Subject, features: dict, name: str, unit
     marker_labels = []
     last_organ = ""
     for channel in sorted(features.keys()):
-        current_organ = channel[:-1]
-        if current_organ != last_organ:
+        current_organ = channel[:-1].split('-')[-1]
+        if current_organ != last_organ and current_organ not in marker_labels:
             last_organ = current_organ
             marker_labels.append(current_organ)
         else:
@@ -450,33 +463,92 @@ def plot_feature_on_electrodes(subject: Subject, features: dict, name: str, unit
     cords.extend([(-60, -90, 85), (-60, -90, 70), (-60, -90, 55)])
     colors.extend([colors_plate[max(values)], mcolors.hsv_to_rgb((120 / 360, 1, 1)), colors_plate[min(values)]])
     if type(values[0]) == float or type(values[0]) == np.float64:
-        marker_labels.extend([f"{max(values):.1f}{unit}", "", f"{min(values):.1f}{unit}"])
+        marker_labels.extend([f"{max(values):{float_format}}{unit}", "", f"{min(values):{float_format}}{unit}"])
     else:
         marker_labels.extend([f"{max(values)}{unit}", "", f"{min(values)}{unit}"])
 
-    view = plotting.view_markers(cords, colors, marker_size=10, marker_labels=marker_labels)
+    view = plotting.view_markers(cords, colors, marker_size=marker_size, marker_labels=marker_labels)
     view.save_as_html(os.path.join(subject.paths.subject_features_3d_plots_dir_path, f'{name}.html'))
 
 
 # Generate a color gradient between red and yellow based on the avarage spike amplitude
 # Gets a dict of channels and their spikes features
 def plot_avg_spike_amplitude_by_electrode(subject: Subject, channels_spikes_features: Dict[str, np.ndarray]):
-    ch_avrage_amp = {}
+    ch_average_amp = {}
     for ch, features in channels_spikes_features.items():
-        if features[0, CORD_X_INDEX] == np.NAN:
+        if features.shape[0] == 0 or features[0, CORD_X_INDEX] == np.NAN:
             continue
-        ch_avrage_amp[ch] = {}
-        ch_avrage_amp[ch]['value'] = np.average(features[:, AMPLITUDE_INDEX])
-        ch_avrage_amp[ch]['cords'] = (features[0, CORD_X_INDEX], features[0, CORD_Y_INDEX], features[0, CORD_Z_INDEX])
-    plot_feature_on_electrodes(subject, ch_avrage_amp, "avrage_amplitude", 'σ')
+        ch_average_amp[ch] = {}
+        ch_average_amp[ch]['value'] = np.average(features[:, AMPLITUDE_INDEX])
+        ch_average_amp[ch]['cords'] = (features[0, CORD_X_INDEX], features[0, CORD_Y_INDEX], features[0, CORD_Z_INDEX])
+    plot_feature_on_electrodes(subject, ch_average_amp, "average_amplitude", 'σ')
 
 
-# Generate a color gradient between red and yellow based on the avarage spike amplitude
+def plot_scalp_detection_probability_for_every_electrode_in_3d(subject: Subject, flat_features, index_to_channel):
+    def main(_probs, title, offsets=None):
+        ch_count = {}
+        for ch_index, prob in _probs.items():
+            channel_name = index_to_channel.get(ch_index)
+            if channel_name is None:
+                continue
+
+            if np.isnan(prob):
+                prob = 0
+
+            channel = flat_features[flat_features[:, CHANNEL_INDEX] == ch_index][0]
+            subject_number = channel[SUBJECT_NUMBER]
+            channel_name = f'{subject_number}-{channel_name}'
+            ch_count[channel_name] = {}
+            ch_count[channel_name]['value'] = int(prob * 1000) / 10
+            ch_count[channel_name]['cords'] = channel[CORD_X_INDEX:CORD_Z_INDEX + 1]
+            if offsets:
+                ch_count[channel_name]['cords'] += offsets[subject_number]
+
+        plot_feature_on_electrodes(subject, ch_count, title, unit='%', marker_size=8.5)
+
+    # Plot the detection probability for every electrode based on the number of spikes in the electrode in total
+    subjects = np.unique(flat_features[:, SUBJECT_NUMBER])
+
+    probs = {}
+    offsets = {}
+    for subj_number in subjects:
+        features = flat_features[flat_features[:, SUBJECT_NUMBER] == subj_number]
+        _p = utils.calculate_sub_group_probabilities_3d(
+            subject_number=subj_number,
+            group_of_indexes=features[:, CHANNEL_INDEX],
+            sub_group_of_indexes=features[features[:, IS_IN_SCALP_INDEX] == 1][:, CHANNEL_INDEX]
+        )
+        probs.update(_p)
+        direction = np.random.normal(size=3)
+        direction[0] = 0
+        direction /= np.linalg.norm(direction)
+        offsets[subj_number] = direction * 3
+    main(probs, "detection_probability_in_scalp", offsets)
+
+    # keep only one spike per group
+    group_ids = flat_features[:, GROUP_INDEX]
+    unique_indices = np.unique(group_ids, return_index=True)[1]
+    unique_group_flat = flat_features[unique_indices]
+
+    probs = {}
+    offsets = {}
+    # Plot the detection probability for every electrode based on the number of spikes in the electrode in total
+    for subj_number in subjects:
+        features = unique_group_flat[unique_group_flat[:, SUBJECT_NUMBER] == subj_number]
+        _p = utils.calculate_sub_group_probabilities_3d(
+            subject_number=subj_number,
+            group_of_indexes=features[:, CHANNEL_INDEX],
+            sub_group_of_indexes=features[features[:, IS_IN_SCALP_INDEX] == 1][:, CHANNEL_INDEX]
+        )
+        probs.update(_p)
+
+    main(probs, "detection_probability_in_scalp_focal", offsets)
+
 # Gets a dict of channels and their spikes features
 def plot_number_of_spikes_by_electrode(subject: Subject, channels_spikes_features: Dict[str, np.ndarray]):
     ch_count_amp = {}
     for ch, features in channels_spikes_features.items():
-        if features[0, CORD_X_INDEX] == np.NAN:
+        if features.shape[0] == 0 or features[0, CORD_X_INDEX] == np.NAN:
             continue
         ch_count_amp[ch] = {}
         ch_count_amp[ch]['value'] = features[:, CHANNEL_INDEX].size
@@ -484,34 +556,98 @@ def plot_number_of_spikes_by_electrode(subject: Subject, channels_spikes_feature
     plot_feature_on_electrodes(subject, ch_count_amp, "number_of_spikes")
 
 
-def create_raincloud_plot(figure_path: str, list_of_arrys: List[np.array], feature_name: str, description, xticks: list, yticklabels: list = None, yticks: list = None, is_discrete: bool = False):
+def density_scatter(x, y, ax, fig, **kwargs):
+    """
+    Scatter plot colored by 2d histogram
+    """
+
+    bins1 = int(np.unique(y[0]).shape[0])
+    z1 = np.histogram(y[0], bins=bins1, density=False)[0]
+
+    bins2 = int(np.unique(y[1]).shape[0])
+    z2 = np.histogram(y[1], bins=bins2, density=False)[0]
+
+    zs = np.concatenate((z1, z2))
+    zs[np.where(np.isnan(zs))] = 0.0
+    zs = np.log10(zs + 1.0)
+    # zs = np.power(np.unique(zs, return_inverse=1)[1].reshape(zs.shape) + 1, 2)
+
+    ys = np.concatenate((np.unique(y[0]), np.unique(y[1])))
+
+    xs = np.ones(bins1 + bins2)
+    xs[:bins1] *= x[0]
+    xs[bins1:] *= x[1]
+
+    new_order = np.argsort(zs)
+    zs = zs[new_order]
+    xs = xs[new_order]
+    ys = ys[new_order]
+
+    sc = ax.scatter(xs, ys, c=zs, **kwargs)
+
+    cbar = fig.colorbar(sc, ax=ax)
+    cbar.ax.set_ylabel('Number Of Spikes (log10)')
+
+    return ax
+
+
+def _find_smallest_data_size(data_channels: Dict[str, np.array]) -> int:
+    return min([len(data) for data in data_channels.values()])
+
+
+def create_raincloud_plot(figure_path: str, data_channels: Dict[str, np.array], feature_name: str, description: str,
+                          yticklabels: list = None, yticks: list = None, is_discrete: bool = False, resample: bool = True, show: bool = False):
     fig, ax = plt.subplots(figsize=(8, 4))
 
+    if resample:
+        # Resample the data to have the same number of samples in each group
+        description = f'resampled | {description}'
+        smallest_data_size = _find_smallest_data_size(data_channels)
+        data_channels = {key: np.random.choice(data, size=smallest_data_size, replace=False) for key, data in data_channels.items()}
 
     if is_discrete:
-        plt.hist(list_of_arrys[0], bins=range(int(min(list_of_arrys[0])), int(max(list_of_arrys[0]) + 2)), edgecolor='black', orientation='horizontal', alpha=0.5, label=xticks[0], density=True)
-        plt.hist(list_of_arrys[1], bins=range(int(min(list_of_arrys[1])), int(max(list_of_arrys[1]) + 2)), edgecolor='black', orientation='horizontal',  alpha=0.5, label=xticks[1], density=True)
-        plt.legend(loc='upper right')
-        plt.xlabel('Density')
+        for key, value in data_channels.items():
+            plt.hist(
+                x=value,
+                bins=range(int(min(value)), int(max(value) + 2)),
+                edgecolor='black',
+                orientation='horizontal',
+                alpha=0.5,
+                density=True
+
+            )
+            plt.legend(loc='upper right', labels=list(data_channels.keys()))
+            plt.xlabel('Density')
     else:
 
         # Create a list of colors for the boxplots based on the number of features you have
-        boxplots_colors = ['yellowgreen', 'olivedrab', 'darkolivegreen', 'darkseagreen', 'lightgreen']
+        box_plots_colors = ['yellowgreen', 'olivedrab', 'darkolivegreen', 'darkseagreen', 'lightgreen']
 
         # Boxplot data
-        bp = ax.boxplot(list_of_arrys, patch_artist=True,
-                        notch='True', showfliers=False)
+        bp = ax.boxplot(
+            x=data_channels.values(),
+            patch_artist=True,
+            notch='True',
+            showfliers=False
+        )
 
         # Change to the desired color and add transparency
-        for patch, color in zip(bp['boxes'], boxplots_colors):
+        for patch, color in zip(bp['boxes'], box_plots_colors):
             patch.set_facecolor(color)
             patch.set_alpha(0.1)
 
         # Create a list of colors for the violin plots based on the number of features you have
         violin_colors = ['darksalmon', 'orchid', 'skyblue', 'lightgreen', 'gold']
 
-        # Violinplot data
-        vp = ax.violinplot(list_of_arrys, points=100, widths=0.7, showmeans=False, showextrema=False, showmedians=False)
+        # Violin plot data
+        vp = ax.violinplot(
+            dataset=data_channels.values(),
+            points=100,
+            widths=0.7,
+            showmeans=False,
+            showextrema=False,
+            showmedians=False
+        )
 
         for idx, b in enumerate(vp['bodies']):
             # Change the color of each violin
@@ -520,17 +656,19 @@ def create_raincloud_plot(figure_path: str, list_of_arrys: List[np.array], featu
         # Create a list of colors for the scatter plots based on the number of features you have
         scatter_colors = ['tomato', 'darksalmon', 'orchid', 'skyblue', 'lightgreen', 'gold']
 
-        # Scatterplot data
-        for idx, features in enumerate(list_of_arrys):
-            # Add jitter effect so the features do not overlap on the y-axis
-            offset = 0.4 if idx % 2 == 0 else 1.6
-            x = np.full(len(features), idx + offset)
-            idxs = np.arange(len(x))
-            out = x.astype(float)
-            out.flat[idxs] += np.random.uniform(low=-.15, high=.15, size=len(idxs))
-            x = out
-            plt.scatter(x, features, s=.08, c=scatter_colors[idx])
-        plt.xticks(np.arange(1, len(list_of_arrys) + 1, 1), xticks)  # Set text labels.
+        if len(data_channels) <= 2:
+            # Scatterplot data
+            xs = []
+            ys = []
+            for idx, features in enumerate(data_channels.values()):
+                # Add jitter effect so the features do not overlap on the y-axis
+                offset = 0.4 if idx % 2 == 0 else 1.6
+                x = idx + offset
+                xs.append(x)
+                ys.append(features)
+            density_scatter(xs, ys, ax, fig, s=20, cmap='turbo')
+
+        plt.xticks(np.arange(1, len(data_channels) + 1, 1), data_channels.keys())
 
     if yticks:
         ax.set_yticks(yticks)
@@ -538,229 +676,208 @@ def create_raincloud_plot(figure_path: str, list_of_arrys: List[np.array], featu
 
     plt.ylabel(feature_name)
     plt.title(f"{feature_name} raincloud plot")
-    plt.text(0, -0.2, description, horizontalalignment='left', verticalalignment='center', transform=ax.transAxes)
-    fig.savefig(os.path.join(figure_path, feature_name), bbox_inches='tight', dpi=300)
+    plt.text(
+        x=0,
+        y=-0.2,
+        s=description,
+        horizontalalignment='left',
+        verticalalignment='center',
+        transform=ax.transAxes
+    )
+
+    fig.savefig(
+        fname=os.path.join(figure_path, feature_name),
+        bbox_inches='tight',
+        dpi=300
+    )
+    if show:
+        plt.show()
 
 
-def get_scalp_intracranial_correlation_raincloud_text(list_of_arrys: List[np.array], is_group: bool):
-    t_p_val, _ = utils.t_test(list_of_arrys[0], list_of_arrys[1])
-    return f'{len(list_of_arrys[0])}/{len(list_of_arrys[0]) + len(list_of_arrys[1])} {"groups" if is_group else "spikes"} detected by scalp model | t test p-value{t_p_val}'
+def get_scalp_intracranial_correlation_raincloud_text(data_channels: List[np.array], is_group: bool):
+    t_p_val, _ = utils.t_test(data_channels[0], data_channels[1])
+    return f'{len(data_channels[0])}/{len(data_channels[0]) + len(data_channels[1])} {"groups" if is_group else "spikes"} detected by scalp model | t test p-value{t_p_val}'
 
 
-def create_raincloud_plot_for_all_spikes_features(subject: Subject, flat_features: np.ndarray, index_to_channel_name: Dict[int, str]):
+def create_raincloud_plot_for_all_spikes_features(subject: Subject, flat_features: np.ndarray, resample: bool = True, show: bool = False):
     sum(flat_features[:, IS_IN_SCALP_INDEX])
 
-    group_ids = flat_features[:, GROUP_INDEX]
-    unique_indices = np.unique(group_ids, return_index=True)[1]
-    unique_group_flat = flat_features[unique_indices]
+    flat_features_scalp = flat_features[flat_features[:, IS_IN_SCALP_INDEX] == 1]
+    flat_features_no_scalp = flat_features[flat_features[:, IS_IN_SCALP_INDEX] == 0]
 
-    xticks = ['Scalp Detection', 'No Scalp Detection']
+    group_ids = flat_features_scalp[:, GROUP_INDEX]
+    unique_indices = np.unique(group_ids, return_index=True)[1]
+    unique_group_flat_scalp = flat_features_scalp[unique_indices]
+
+    group_ids = flat_features_no_scalp[:, GROUP_INDEX]
+    unique_indices = np.unique(group_ids, return_index=True)[1]
+    unique_group_flat_no_scalp = flat_features_no_scalp[unique_indices]
+
     path = subject.paths.subject_raincloud_plots_dir_path
 
     ampliudes_of_detected = flat_features[flat_features[:, IS_IN_SCALP_INDEX] == 1][:, AMPLITUDE_INDEX]
     ampliudes_of_not_detected = flat_features[flat_features[:, IS_IN_SCALP_INDEX] == 0][:, AMPLITUDE_INDEX]
     create_raincloud_plot(
         figure_path=path,
-        list_of_arrys=[ampliudes_of_detected, ampliudes_of_not_detected],
+        data_channels={
+            'Scalp Detection': ampliudes_of_detected,
+            'No Scalp Detection': ampliudes_of_not_detected
+        },
         feature_name="Spike Amplitude (σ)",
         description=get_scalp_intracranial_correlation_raincloud_text([ampliudes_of_detected, ampliudes_of_not_detected], is_group=False),
-        xticks=xticks,
+        resample=resample,
+        show=show
     )
 
     durations_of_detected = flat_features[flat_features[:, IS_IN_SCALP_INDEX] == 1][:, DURATION_INDEX]
     durations_of_not_detected = flat_features[flat_features[:, IS_IN_SCALP_INDEX] == 0][:, DURATION_INDEX]
     create_raincloud_plot(
         figure_path=path,
-        list_of_arrys=[durations_of_detected, durations_of_not_detected],
+        data_channels={
+            'Scalp Detection': durations_of_detected,
+            'No Scalp Detection': durations_of_not_detected
+        },
         feature_name="Spike Duration (ms)",
         description=get_scalp_intracranial_correlation_raincloud_text([durations_of_detected, durations_of_not_detected], is_group=False),
-        xticks=xticks,
+        resample=resample,
+        show=show
     )
 
-    event_focal_of_detected = unique_group_flat[unique_group_flat[:, IS_IN_SCALP_INDEX] == 1][:, GROUP_FOCAL_INDEX]
-    event_focal_of_not_detected = unique_group_flat[unique_group_flat[:, IS_IN_SCALP_INDEX] == 0][:, GROUP_FOCAL_INDEX]
-    yticklabels = []
-    yticks = []
-    for index in index_to_channel_name.keys():
-        if index_to_channel_name[index][:-1] not in yticklabels:
-            yticklabels.append(index_to_channel_name[index][:-1])
-            yticks.append(index)
-    print(yticklabels)
-    print(yticks)
-
+    event_duration_of_detected = unique_group_flat_scalp[:, GROUP_EVENT_DURATION_INDEX]
+    event_duration_of_not_detected = unique_group_flat_no_scalp[:, GROUP_EVENT_DURATION_INDEX]
     create_raincloud_plot(
         figure_path=path,
-        list_of_arrys=[event_focal_of_detected, event_focal_of_not_detected],
-        feature_name="Group Event Focal Electrode",
-        description=get_scalp_intracranial_correlation_raincloud_text([event_focal_of_detected, event_focal_of_not_detected], is_group=True),
-        xticks=xticks,
-        yticklabels=yticklabels,
-        yticks=yticks,
-        is_discrete=True,
-    )
-
-    event_electrodes_of_detected = flat_features[flat_features[:, IS_IN_SCALP_INDEX] == 1][:, CHANNEL_INDEX]
-    event_electrodes_of_not_detected = flat_features[flat_features[:, IS_IN_SCALP_INDEX] == 0][:, CHANNEL_INDEX]
-    create_raincloud_plot(
-        figure_path=path,
-        list_of_arrys=[event_electrodes_of_detected, event_electrodes_of_not_detected],
-        feature_name="Spikes Electrodes",
-        description=get_scalp_intracranial_correlation_raincloud_text([event_electrodes_of_detected, event_electrodes_of_not_detected], is_group=False),
-        xticks=xticks,
-        yticklabels=yticklabels,
-        yticks=yticks,
-        is_discrete=True,
-    )
-
-    event_duration_of_detected = unique_group_flat[unique_group_flat[:, IS_IN_SCALP_INDEX] == 1][:, GROUP_EVENT_DURATION_INDEX]
-    event_duration_of_not_detected = unique_group_flat[unique_group_flat[:, IS_IN_SCALP_INDEX] == 0][:, GROUP_EVENT_DURATION_INDEX]
-    create_raincloud_plot(
-        figure_path=path,
-        list_of_arrys=[event_duration_of_detected, event_duration_of_not_detected],
+        data_channels={
+            'Scalp Detection': event_duration_of_detected,
+            'No Scalp Detection': event_duration_of_not_detected
+        },
         feature_name="Group Event Spreading Duration (ms)",
         description=get_scalp_intracranial_correlation_raincloud_text([event_duration_of_detected, event_duration_of_not_detected], is_group=True),
-        xticks=xticks,
+        resample=resample,
+        show=show
     )
 
-    event_size_of_detected = unique_group_flat[unique_group_flat[:, IS_IN_SCALP_INDEX] == 1][:, GROUP_EVENT_SIZE_INDEX]
-    event_size_of_not_detected = unique_group_flat[unique_group_flat[:, IS_IN_SCALP_INDEX] == 0][:, GROUP_EVENT_SIZE_INDEX]
+    event_size_of_detected = unique_group_flat_scalp[:, GROUP_EVENT_SIZE_INDEX]
+    event_size_of_not_detected = unique_group_flat_no_scalp[:, GROUP_EVENT_SIZE_INDEX]
     create_raincloud_plot(
         figure_path=path,
-        list_of_arrys=[event_size_of_detected, event_size_of_not_detected],
+        data_channels={
+            'Scalp Detection': event_size_of_detected,
+            'No Scalp Detection': event_size_of_not_detected
+        },
         feature_name="Group Event Size (n electrodes)",
         description=get_scalp_intracranial_correlation_raincloud_text([event_size_of_detected, event_size_of_not_detected], is_group=True),
-        xticks=xticks,
+        resample=resample,
+        show=show
     )
 
-    event_deepest_index_of_detected = unique_group_flat[unique_group_flat[:, IS_IN_SCALP_INDEX] == 1][:, GROUP_EVENT_DEEPEST_INDEX]
-    event_deepest_index_of_not_detected = unique_group_flat[unique_group_flat[:, IS_IN_SCALP_INDEX] == 0][:, GROUP_EVENT_DEEPEST_INDEX]
+    spatial_spread_index_of_detected = unique_group_flat_scalp[:, GROUP_EVENT_SPATIAL_SPREAD_INDEX]
+    spatial_spread_index_of_not_detected = unique_group_flat_no_scalp[:, GROUP_EVENT_SPATIAL_SPREAD_INDEX]
     create_raincloud_plot(
         figure_path=path,
-        list_of_arrys=[event_deepest_index_of_detected, event_deepest_index_of_not_detected],
-        feature_name="Group Event Deepest Electrode Index",
-        description=get_scalp_intracranial_correlation_raincloud_text([event_deepest_index_of_detected, event_deepest_index_of_not_detected], is_group=True),
-        xticks=xticks,
-        is_discrete=True,
-    )
-
-    event_shallowest_index_of_detected = unique_group_flat[unique_group_flat[:, IS_IN_SCALP_INDEX] == 1][:, GROUP_EVENT_SHALLOWEST_INDEX]
-    event_shallowest_index_of_not_detected = unique_group_flat[unique_group_flat[:, IS_IN_SCALP_INDEX] == 0][:, GROUP_EVENT_SHALLOWEST_INDEX]
-    create_raincloud_plot(
-        figure_path=path,
-        list_of_arrys=[event_shallowest_index_of_detected, event_shallowest_index_of_not_detected],
-        feature_name="Group Event Shallowest Electrode Index",
-        description=get_scalp_intracranial_correlation_raincloud_text([event_shallowest_index_of_detected, event_shallowest_index_of_not_detected], is_group=True),
-        xticks=xticks,
-        is_discrete=True,
-    )
-
-    spatial_spread_index_of_detected = unique_group_flat[unique_group_flat[:, IS_IN_SCALP_INDEX] == 1][:, GROUP_EVENT_SPATIAL_SPREAD_INDEX]
-    spatial_spread_index_of_detected = spatial_spread_index_of_detected[spatial_spread_index_of_detected > 0]
-    spatial_spread_index_of_not_detected = unique_group_flat[unique_group_flat[:, IS_IN_SCALP_INDEX] == 0][:, GROUP_EVENT_SPATIAL_SPREAD_INDEX]
-    spatial_spread_index_of_not_detected = spatial_spread_index_of_not_detected[spatial_spread_index_of_not_detected > 0]
-    create_raincloud_plot(
-        figure_path=path,
-        list_of_arrys=[spatial_spread_index_of_detected, spatial_spread_index_of_not_detected],
+        data_channels={
+            'Scalp Detection': spatial_spread_index_of_detected,
+            'No Scalp Detection': spatial_spread_index_of_not_detected
+        },
         feature_name="Group Event Spatial Spread",
         description=get_scalp_intracranial_correlation_raincloud_text([spatial_spread_index_of_detected, spatial_spread_index_of_not_detected], is_group=True),
-        xticks=xticks,
+        resample=resample,
+        show=show
     )
 
-
-def get_stimuli_effects_raincloud_text(list_of_arrys: List[np.array], is_group: bool = False):
-    t_p_val1, _ = utils.t_test(list_of_arrys[0], list_of_arrys[1])
-    t_p_val2, _ = utils.t_test(list_of_arrys[1], list_of_arrys[2])
-    t_p_val3, _ = utils.t_test(list_of_arrys[0], list_of_arrys[2])
-
-    return f'Before: {len(list_of_arrys[0])} | During: {len(list_of_arrys[1])} | After: {len(list_of_arrys[2])} {"groups" if is_group else "spikes"} detected by scalp model' \
-           f'\nBefore - During t test p-value{t_p_val1}' \
-           f'\nDuring - After t test p-value{t_p_val2}' \
-           f'\nBefore - After t test p-value{t_p_val3}'
-
-
-def stimuli_effects_raincloud_plots(subject: Subject, flat_features: np.ndarray, index_to_channel: Dict[int, str]):
-    before, during, after = utils.stimuli_effects(subject, flat_features)
-
+    event_deepest_index_of_detected = unique_group_flat_scalp[:, GROUP_EVENT_DEEPEST_INDEX]
+    event_deepest_index_of_not_detected = unique_group_flat_no_scalp[:, GROUP_EVENT_DEEPEST_INDEX]
     create_raincloud_plot(
-        figure_path=subject.paths.subject_raincloud_plots_dir_path,
-        list_of_arrys=[before[:, AMPLITUDE_INDEX], during[:, AMPLITUDE_INDEX], after[:, AMPLITUDE_INDEX]],
-        feature_name='Stimuli Effects on Amplitude (σ)',
-        description=get_stimuli_effects_raincloud_text([before[:, AMPLITUDE_INDEX], during[:, AMPLITUDE_INDEX], after[:, AMPLITUDE_INDEX]]),
-        yticks=['Before', 'During', 'After'],
-    )
-
-    create_raincloud_plot(
-        figure_path=subject.paths.subject_raincloud_plots_dir_path,
-        list_of_arrys=[before[:, DURATION_INDEX], during[:, DURATION_INDEX], after[:, DURATION_INDEX]],
-        feature_name='Stimuli Effects on Spike Duration (ms)',
-        description=get_stimuli_effects_raincloud_text([before[:, DURATION_INDEX], during[:, DURATION_INDEX], after[:, DURATION_INDEX]]),
-        yticks=['Before', 'During', 'After'],
-    )
-
-    group_ids = flat_features[:, GROUP_INDEX]
-    unique_indices = np.unique(group_ids, return_index=True)[1]
-    unique_group_flat = flat_features[unique_indices]
-    before, during, after = utils.stimuli_effects(subject, unique_group_flat)
-
-    xticklabels = []
-    xticks = []
-    for index in reversed(index_to_channel.keys()):
-        if index_to_channel[index][:-1] not in xticklabels:
-            xticklabels.append(index_to_channel[index][:-1])
-            xticks.append(index)
-
-    create_raincloud_plot(
-        figure_path=subject.paths.subject_raincloud_plots_dir_path,
-        list_of_arrys=[before[:, GROUP_FOCAL_INDEX], during[:, GROUP_FOCAL_INDEX], after[:, GROUP_FOCAL_INDEX]],
-        feature_name='Stimuli Effects on Group Event Focal Electrode',
-        description=get_stimuli_effects_raincloud_text([before[:, GROUP_FOCAL_INDEX], during[:, GROUP_FOCAL_INDEX], after[:, GROUP_FOCAL_INDEX]], is_group=True),
-        yticks=['Before', 'During', 'After'],
-        xticks=xticks,
-        xticklabels=xticklabels,
+        figure_path=path,
+        data_channels={
+            'Scalp Detection': event_deepest_index_of_detected,
+            'No Scalp Detection': event_deepest_index_of_not_detected
+        },
+        feature_name="Group Event Deepest Electrode Index",
+        description=get_scalp_intracranial_correlation_raincloud_text([event_deepest_index_of_detected, event_deepest_index_of_not_detected], is_group=True),
         is_discrete=True,
+        resample=resample,
+        show=show
     )
 
+    event_shallowest_index_of_detected = unique_group_flat_scalp[:, GROUP_EVENT_SHALLOWEST_INDEX]
+    event_shallowest_index_of_not_detected = unique_group_flat_no_scalp[:, GROUP_EVENT_SHALLOWEST_INDEX]
     create_raincloud_plot(
-        figure_path=subject.paths.subject_raincloud_plots_dir_path,
-        list_of_arrys=[before[:, GROUP_EVENT_DURATION_INDEX], during[:, GROUP_EVENT_DURATION_INDEX],
-                       after[:, GROUP_EVENT_DURATION_INDEX]],
-        feature_name='Stimuli Effects on Group Event Spreading Duration (ms)',
-        description=get_stimuli_effects_raincloud_text([before[:, GROUP_EVENT_DURATION_INDEX], during[:, GROUP_EVENT_DURATION_INDEX], after[:, GROUP_EVENT_DURATION_INDEX]], is_group=True),
-        yticks=['Before', 'During', 'After'],
+        figure_path=path,
+        data_channels={
+            'Scalp Detection': event_shallowest_index_of_detected,
+            'No Scalp Detection': event_shallowest_index_of_not_detected
+        },
+        feature_name="Group Event Shallowest Electrode Index",
+        description=get_scalp_intracranial_correlation_raincloud_text([event_shallowest_index_of_detected, event_shallowest_index_of_not_detected], is_group=True),
+        is_discrete=True,
+        resample=resample,
+        show=show
     )
 
-    create_raincloud_plot(
-        figure_path=subject.paths.subject_raincloud_plots_dir_path,
-        list_of_arrys=[before[:, GROUP_EVENT_SIZE_INDEX], during[:, GROUP_EVENT_DURATION_INDEX],
-                       after[:, GROUP_EVENT_DURATION_INDEX]],
-        feature_name='Stimuli Effects on Group Event Size (n electrodes)',
-        description=get_stimuli_effects_raincloud_text([before[:, GROUP_EVENT_SIZE_INDEX], during[:, GROUP_EVENT_DURATION_INDEX], after[:, GROUP_EVENT_DURATION_INDEX]], is_group=True),
-        yticks=['Before', 'During', 'After'],
-    )
 
-    create_raincloud_plot(
-        figure_path=subject.paths.subject_raincloud_plots_dir_path,
-        list_of_arrys=[before[:, GROUP_EVENT_DEEPEST_INDEX], during[:, GROUP_EVENT_DEEPEST_INDEX],
-                       after[:, GROUP_EVENT_DEEPEST_INDEX]],
-        feature_name='Stimuli Effects on Group Group Event Deepest Electrode Index',
-        description=get_stimuli_effects_raincloud_text([before[:, GROUP_EVENT_DEEPEST_INDEX], during[:, GROUP_EVENT_DEEPEST_INDEX], after[:, GROUP_EVENT_DEEPEST_INDEX]], is_group=True),
-        yticks=['Before', 'During', 'After'],
-    )
+def plot_stimuli_effects(subject: Subject, means: Dict[str, np.ndarray], title: str, show: bool = False):
+    # Set up the figure and axis
+    fig, ax = plt.subplots()
 
-    create_raincloud_plot(
-        figure_path=subject.paths.subject_raincloud_plots_dir_path,
-        list_of_arrys=[before[:, GROUP_EVENT_SHALLOWEST_INDEX], during[:, GROUP_EVENT_SHALLOWEST_INDEX],
-                       after[:, GROUP_EVENT_SHALLOWEST_INDEX]],
-        feature_name='Stimuli Effects on Group Group Event Shallowest Electrode Index',
-        description=get_stimuli_effects_raincloud_text([before[:, GROUP_EVENT_SHALLOWEST_INDEX], during[:, GROUP_EVENT_SHALLOWEST_INDEX], after[:, GROUP_EVENT_SHALLOWEST_INDEX]], is_group=True),
-        yticks=['Before', 'During', 'After'],
-    )
+    # Plot each subject's data as a line plot
+    for subj, values in means.items():
+        ax.plot(range(len(values)), values, label=subj, alpha=0.5, linewidth=1)
 
-    create_raincloud_plot(
-        figure_path=subject.paths.subject_raincloud_plots_dir_path,
-        list_of_arrys=[before[:, GROUP_EVENT_SPATIAL_SPREAD_INDEX], during[:, GROUP_EVENT_SPATIAL_SPREAD_INDEX],
-                       after[:, GROUP_EVENT_SPATIAL_SPREAD_INDEX]],
-        feature_name='Stimuli Effects on Group Event Spatial spread',
-        description=get_stimuli_effects_raincloud_text([before[:, GROUP_EVENT_SPATIAL_SPREAD_INDEX], during[:, GROUP_EVENT_SPATIAL_SPREAD_INDEX], after[:, GROUP_EVENT_SPATIAL_SPREAD_INDEX]], is_group=True),
-        yticks=['Before', 'During', 'After'],
-    )
+    # Add labels and title
+    ax.set_ylabel('Diffrence From Pre Stimuli Period %')
+    ax.set_xticks([0, 1, 2, 3, 4])
+    ax.set_xticklabels(['Pre Stimuli\n Period', 'Stim block', 'Pause block', 'During Stimuli\n Window', 'Post Stimuli\n Period'])
+    ax.set_title(f'Subjects {title}')
+
+    # Calculate mean and standard deviation
+    mean_values = np.mean(np.array(list(means.values())), axis=0)
+    std_values = np.std(np.array(list(means.values())), axis=0)
+
+    # Add mean range line
+    ax.plot(range(len(mean_values)), mean_values, label='Mean', color='gray', alpha=1, linewidth=3)
+
+    ax.axhline(0, color='black', linestyle='--')
+
+    # Add legend
+    legend = ax.legend(bbox_to_anchor=(1.05, 1.02))
+
+    # change the line width for the legend
+    for line in legend.get_lines():
+        line.set_linewidth(2)
+
+    # Show the plot
+    plt.savefig(os.path.join(subject.paths.subject_stimuli_effects_plots_dir_path, f'{title}.png'), bbox_inches='tight')
+    if show:
+        plt.show()
+
+
+def create_psd_for_channel(subject: Subject, channel_name: str, ieeg_raw: mne.io.Raw, flat_features: np.ndarray, channel_to_index: Dict[str, int], show: bool = False):
+    channel_raw = ieeg_raw.copy().pick_channels([channel_name])
+    channel_features = flat_features[flat_features[:, CHANNEL_INDEX] == channel_to_index[channel_name]]
+    channel_spikes_indexes = channel_features[:, TIMESTAMP_INDEX].reshape(-1, 1).astype(int)
+    create_PSD_plot(subject, channel_raw, channel_spikes_indexes, channel_name, show)
+
+
+def create_tfr_for_channel(subject: Subject, channel_name: str, ieeg_raw: mne.io.Raw, flat_features: np.ndarray, channel_to_index: Dict[str, int], show: bool = False):
+    channel_raw = ieeg_raw.copy().pick_channels([channel_name])
+    channel_features = flat_features[flat_features[:, CHANNEL_INDEX] == channel_to_index[channel_name]]
+    channel_spikes_indexes = channel_features[:, TIMESTAMP_INDEX].reshape(-1, 1).astype(int)
+    create_TFR_plot(subject, channel_raw, channel_spikes_indexes, channel_name, show)
+
+
+def create_erp_for_channel(subject: Subject, channel_name: str, ieeg_raw: mne.io.Raw, flat_features: np.ndarray,
+                           channel_to_index: Dict[str, int], show: bool = False):
+    channel_raw = ieeg_raw.copy().pick_channels([channel_name])
+    channel_raw.load_data()
+    filtered_channel_raw = channel_raw.copy().filter(l_freq=LOW_THRESHOLD_FREQUENCY, h_freq=HIGH_THRESHOLD_FREQUENCY)
+    channel_features = flat_features[flat_features[:, CHANNEL_INDEX] == channel_to_index[channel_name]]
+    channel_spikes_indexes = channel_features[:, TIMESTAMP_INDEX].reshape(-1, 1).astype(int)
+    create_ERP_plot(subject, filtered_channel_raw, channel_spikes_indexes, channel_name, show)
+
+from IPython.display import HTML
+def create_histogram_for_channel(subject: Subject, channel_name: str, flat_features: np.ndarray, channel_to_index: Dict[str, int], show: bool = False):
+    channel_features = flat_features[flat_features[:, CHANNEL_INDEX] == channel_to_index[channel_name]]
+    channel_amplitudes = channel_features[:, AMPLITUDE_INDEX].reshape(-1, 1).astype(int)
+    channel_duration = channel_features[:, DURATION_INDEX].reshape(-1, 1).astype(int)
+    create_channel_features_histograms(subject, channel_amplitudes, channel_duration, channel_name, show)

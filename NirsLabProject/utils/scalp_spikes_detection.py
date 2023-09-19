@@ -175,6 +175,7 @@ def get_all_feat_eog_with_chan_feat(eog_num: str, subject: Subject, raw: mne.io.
 
 def detect_spikes_of_subject(subject: Subject, raw: mne.io.Raw) -> np.ndarray:
     if 'EOG1' not in raw.ch_names or 'EOG2' not in raw.ch_names:
+        return np.array([])
         raise Exception('EOG1 or EOG2 not in raw channels')
     xgb_model = joblib.load(os.path.join(Paths.models_dir_path, SCALP_MODEL_NAME))
     feat_eog1 = get_all_feat_eog_with_chan_feat('1', subject, raw)

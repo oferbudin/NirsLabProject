@@ -5,6 +5,7 @@ from typing import Dict, List
 import scipy
 
 from NirsLabProject.config.consts import *
+from NirsLabProject.config.subject import Subject
 
 
 # Python 3 program to merge K sorted arrays of size N each.
@@ -213,13 +214,8 @@ class Group:
         return f'Group size {self.size} | Focal: {self.focal_channel_name} | Hemisphers: {self.hemispheres} | Stractures: {self.structures} | Time Difrences: {self.group_event_duration}'
 
 
-def group_spikes(channels_spikes_features: Dict[str, np.ndarray]):
+def group_spikes(subject: Subject, channels_spikes_features: Dict[str, np.ndarray], index_to_channel: Dict[int, str]):
     print('Grouping spikes')
-
-    index_to_channel = {}
-    for channel_name in channels_spikes_features.keys():
-        index = channels_spikes_features[channel_name][0][CHANNEL_INDEX]
-        index_to_channel[index] = channel_name
 
     # Merge all the spikes into one sorted array
     all_spikes = [spikes for spikes in channels_spikes_features.values() if spikes.shape[0] > 0]
@@ -250,8 +246,9 @@ def group_spikes(channels_spikes_features: Dict[str, np.ndarray]):
     all_spikes_group_group_spatial_spread = np.zeros(all_spikes_flat.shape[0], dtype=int)
     # Create a group object for each group
     for group_index, group in enumerate(groups_list):
-        group = Group(group, group_index, index_to_channel)
-        group_index_to_group[group_index] = group
+        subject_group_index = f'{subject.p_number}_{group_index}'
+        group = Group(group, subject_group_index, index_to_channel)
+        group_index_to_group[subject_group_index] = group
         for i in range(group.size):
             # Add the group index to the spikes features
             all_spikes_group_indexes[spike_index] = group.index
@@ -278,4 +275,4 @@ def group_spikes(channels_spikes_features: Dict[str, np.ndarray]):
         axis=1
     )
 
-    return group_index_to_group, all_spikes_flat, index_to_channel
+    return group_index_to_group, all_spikes_flat

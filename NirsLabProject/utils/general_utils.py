@@ -1,4 +1,6 @@
 import os
+import traceback
+
 import mne
 import numpy as np
 import pandas as pd
@@ -7,6 +9,7 @@ from typing import Tuple, Dict, List
 from scipy.signal import find_peaks
 from scipy.stats import skew, kurtosis
 import scipy.stats as sp_stats
+from collections import Counter
 
 
 from NirsLabProject.config.consts import *
@@ -20,6 +23,8 @@ COORDINATES = {}
 
 def clean_channel_name(channel_name: str) -> str:
     # Remove the '-REF' or '-REF1' from the channel name
+    if channel_name[-2] == 'r':
+        channel_name = channel_name[:-2] + channel_name[-1]
     return channel_name.replace('-REF1', '').replace('SEEG ', '').replace('-REF', '')
 
 
@@ -30,7 +35,7 @@ def get_spike_amplitude_and_length(data: np.ndarray, peak_index) -> Dict:
     end_frame_index = min(len(data), peak_index+spike_range_in_indexes)
 
     amplitude = data[peak_index]
-    # finding closest point before the peak with half of the peak amplitude
+    # finding the closest point before the peak with half of the peak amplitude
     first_half_start = start_frame_index + np.where(data[start_frame_index:peak_index] < amplitude / 2)[0]
     if len(first_half_start) > 0:
         first_half_start = first_half_start[-1]
@@ -38,7 +43,7 @@ def get_spike_amplitude_and_length(data: np.ndarray, peak_index) -> Dict:
         # if there is no point before the peak with half of the peak amplitude, we will take the start of the window
         return {'index': peak_index, 'amplitude': amplitude, 'length': -1}
 
-    # finding closest point after the peak with half of the peak amplitude
+    # finding the closest point after the peak with half of the peak amplitude
     second_half_end = peak_index + np.where(data[peak_index:end_frame_index] < amplitude / 2)[0]
     if len(second_half_end) > 0:
         second_half_end = second_half_end[0]
@@ -59,12 +64,15 @@ def get_data_of_spike_in_wide_window(channel_data: np.ndarray, spike_window_time
 
 # finds the exact spike timestamp in the timestamp window and returns the index of the spike peak
 def get_spike_amplitude_index(channel_data: np.ndarray, spike_window_timestamp: float) -> int:
-    wide_spike_window_data, wide_spike_window_start_index, _end = get_data_of_spike_in_wide_window(channel_data, spike_window_timestamp)
+    wide_spike_window_data, wide_spike_window_start_index, _end = get_data_of_spike_in_wide_window(
+        channel_data, spike_window_timestamp)
 
     # Find the peak of the spike in the wide_spike_window_data with length smaller than MAX_SPIKE_LENGTH_MILLISECONDS
     peaks, _ = find_peaks(wide_spike_window_data)
-    spikes = map(lambda peak: get_spike_amplitude_and_length(wide_spike_window_data, peak), peaks)
-    filtered_spikes = list(filter(lambda x: MIN_SPIKE_LENGTH_MILLISECONDS < x['length'] <= MAX_SPIKE_LENGTH_MILLISECONDS, spikes))
+    spikes = map(lambda p: get_spike_amplitude_and_length(wide_spike_window_data, p), peaks)
+    filtered_spikes = list(
+        filter(lambda x: MIN_SPIKE_LENGTH_MILLISECONDS < x['length'] <= MAX_SPIKE_LENGTH_MILLISECONDS, spikes)
+    )
     if not filtered_spikes:
         return -1
 
@@ -83,8 +91,10 @@ def get_spikes_peak_indexes_in_spikes_windows(channel_data: np.ndarray, spikes_w
     spikes = spikes.reshape(-1, 1)
     if spikes.shape[0] == 0:
         return None
-    spikes = np.vectorize(partial(get_spike_amplitude_index, channel_data))(spikes) # Get the spike index in the channel data for each spike in the spikes array
-    spikes = spikes[spikes >= 0] # Removes epochs that have no spike with length that smaller than  MAX_SPIKE_LENGTH_MILLISECONDS
+    # Get the spike index in the channel data for each spike in the spikes array
+    spikes = np.vectorize(partial(get_spike_amplitude_index, channel_data))(spikes)
+    # Removes epochs that have no spike with length that smaller than  MAX_SPIKE_LENGTH_MILLISECONDS
+    spikes = spikes[spikes >= 0]
     spikes = np.unique(spikes).reshape(-1, 1)
     spikes = spikes.astype(int)
     return spikes
@@ -194,37 +204,48 @@ def catch_exception(func):
         try:
             return func(*args, **kwargs)
         except Exception as e:
-            print(f'function {func.__name__} with args {args}, kwargs {kwargs} failed: {e}')
+            print(f'function {func.__name__} with args {args}, kwargs {kwargs} failed: {traceback.format_exc()}')
             return None
     return wrapper
 
 
 def calculate_coordinates():
-    sum = {}
+    _sum = {}
     count = {}
     for file in [file for file in os.listdir(Paths.coordinates_data_dir_path) if file.endswith('Loc.txt')]:
         loc_file_path = os.path.join(Paths.coordinates_data_dir_path, file)
-        loc_data = pd.read_csv(loc_file_path, delimiter=' ', usecols=[0, 1], header=None, dtype={0: str, 1: int})
+        loc_data = pd.read_csv(
+            filepath_or_buffer=loc_file_path,
+            delimiter=' ',
+            usecols=[0, 1],
+            header=None,
+            dtype={0: str, 1: int}
+        )
         pial_file_path = os.path.join(Paths.coordinates_data_dir_path, file.replace('PostimpLoc.txt', '.Pial'))
-        pial_data = pd.read_csv(pial_file_path, delimiter=' ', skiprows=2, header=None,
-                           dtype={0: float, 1: float, 2: float})
+        pial_data = pd.read_csv(
+            filepath_or_buffer=pial_file_path,
+            delimiter=' ',
+            skiprows=2,
+            header=None,
+            dtype={0: float, 1: float, 2: float}
+        )
 
         for loc_electrode, pial_electrode in zip(loc_data.iterrows(), pial_data.iterrows()):
             electrode_name = f'{loc_electrode[1][0]}{loc_electrode[1][1]}'
-            if electrode_name not in sum:
-                sum[electrode_name] = [0, 0, 0]
+            if electrode_name not in _sum:
+                _sum[electrode_name] = [0, 0, 0]
                 count[electrode_name] = 0
             count[electrode_name] += 1
-            sum[electrode_name][0] += pial_electrode[1][0]
-            sum[electrode_name][1] += pial_electrode[1][1]
-            sum[electrode_name][2] += pial_electrode[1][2]
+            _sum[electrode_name][0] += pial_electrode[1][0]
+            _sum[electrode_name][1] += pial_electrode[1][1]
+            _sum[electrode_name][2] += pial_electrode[1][2]
 
-    for electrode in sum:
-        sum[electrode][0] /= count[electrode]
-        sum[electrode][1] /= count[electrode]
-        sum[electrode][2] /= count[electrode]
+    for electrode in _sum:
+        _sum[electrode][0] /= count[electrode]
+        _sum[electrode][1] /= count[electrode]
+        _sum[electrode][2] /= count[electrode]
 
-    return sum
+    return _sum
 
 
 def remove_bad_channels(raw: mne.io.Raw):
@@ -241,6 +262,8 @@ def remove_bad_channels(raw: mne.io.Raw):
 
     total_channel_index = 0
     for i, channel_name in enumerate(channel_names):
+        if 'EOG' in channel_name:
+            continue
         channel_area = channel_name[:-1]
         if channel_area not in area_norms:
             print(f'calculating norms for electrode {channel_area}')
@@ -271,23 +294,23 @@ def remove_bad_channels(raw: mne.io.Raw):
                 area_norms_skew_median = np.median(area_norms_skew[channel_area])
                 area_norms_kurtosis_median = np.median(area_norms_kurtosis[channel_area])
 
-                for i, _ in enumerate(channels):
+                for j, _ in enumerate(channels):
                     # currently the only feature that in use
-                    if area_norms_stds[channel_area][i] > area_norms_stds_median * 4:
+                    if area_norms_stds[channel_area][j] > area_norms_stds_median * 4:
                         channel_features[total_channel_index][0] = 2
-                    elif area_norms_stds[channel_area][i] > area_norms_stds_median * 2:
+                    elif area_norms_stds[channel_area][j] > area_norms_stds_median * 2:
                         channel_features[total_channel_index][0] = 1.5
-                    elif area_norms_stds[channel_area][i] > area_norms_stds_median * 1.5:
+                    elif area_norms_stds[channel_area][j] > area_norms_stds_median * 1.5:
                         channel_features[total_channel_index][0] = 1
 
-                    if area_norms_skew[channel_area][i] > area_norms_skew_median * 4:
+                    if area_norms_skew[channel_area][j] > area_norms_skew_median * 4:
                         channel_features[total_channel_index][1] = 2
-                    elif area_norms_skew[channel_area][i] > area_norms_skew_median * 2:
+                    elif area_norms_skew[channel_area][j] > area_norms_skew_median * 2:
                         channel_features[total_channel_index][1] = 1
 
-                    if area_norms_kurtosis[channel_area][i] > area_norms_kurtosis_median * 4:
+                    if area_norms_kurtosis[channel_area][j] > area_norms_kurtosis_median * 4:
                         channel_features[total_channel_index][2] = 2
-                    elif area_norms_kurtosis[channel_area][i] > area_norms_kurtosis_median * 2:
+                    elif area_norms_kurtosis[channel_area][j] > area_norms_kurtosis_median * 2:
                         channel_features[total_channel_index][2] = 1
 
                     total_channel_index += 1
@@ -295,7 +318,7 @@ def remove_bad_channels(raw: mne.io.Raw):
 
     bad_channels_name = []
     for channel_name, features in zip(raw.ch_names, channel_features):
-        if features[0] > 1:
+        if features.sum() > 2 or features[0] >= 1:
             bad_channels_name.append(channel_name)
 
     if bad_channels_name:
@@ -315,19 +338,24 @@ def pars_stimuli_locations_file(subject: Subject) -> List[str]:
         if subject.p_number == int(pt):
             stimulating_electrode = row['StimulatingElectrodeArea']
     if stimulating_electrode == '':
-        raise Exception(f'Could not find the stimulating electrode for subject {subject.p_number}')
+        print(f'Could not find the stimulating electrode for subject {subject.p_number}')
+        return []
     electrode_name_and_parts = stimulating_electrode.split('-')
     electrode_name = electrode_name_and_parts[0].upper()
     electrodes = [electrode_name + str(i) for i in electrode_name_and_parts[1:]]
     return electrodes
 
 
-def add_flag_of_scalp_detection_to_spikes_features(flat_features: np.ndarray, scalp_spikes_spikes_windows: List[int]):
+def add_flag_of_scalp_detection_to_spikes_features(flat_features: np.ndarray, scalp_spikes_spikes_windows: np.ndarray):
     indexes = np.zeros((flat_features.shape[0], 1))
     for spike in scalp_spikes_spikes_windows:
         window_start = spike * 1000
         match_spikes = np.where(
-            np.logical_and(window_start - 100 < flat_features[:, TIMESTAMP_INDEX], flat_features[:, TIMESTAMP_INDEX] < window_start + int(SPIKE_RANGE_SECONDS*1000)))
+            np.logical_and(
+                window_start - 100 < flat_features[:, TIMESTAMP_INDEX],
+                flat_features[:, TIMESTAMP_INDEX] < window_start + int(SPIKE_RANGE_SECONDS*1000)
+            )
+        )
         indexes[match_spikes[0]] = 1
     return np.concatenate((flat_features, indexes), axis=1)
 
@@ -338,19 +366,50 @@ def add_stimuli_flag_to_spikes_features(subject: Subject, flat_features: np.ndar
         stimuli_windows = get_stimuli_time_windows(subject)
         stimuli_session_start = stimuli_windows[0][0] * SR
         stimuli_session_end = stimuli_windows[-1][1] * SR
-        flags[np.where(np.logical_and(stimuli_session_start < flat_features[:, TIMESTAMP_INDEX], flat_features[:, TIMESTAMP_INDEX] < stimuli_session_end))] = STIMULI_FLAG_DURING_STIMULI_SESSION
-        flags[np.where(flat_features[:, TIMESTAMP_INDEX] < stimuli_session_start)] = STIMULI_FLAG_BEFORE_FIRST_STIMULI_SESSION
-        flags[np.where(flat_features[:, TIMESTAMP_INDEX] > stimuli_session_end)] = STIMULI_FLAG_AFTER_STIMULI_SESSION
+
+        flags[
+            np.where(
+                np.logical_and(
+                    stimuli_session_start < flat_features[:, TIMESTAMP_INDEX],
+                    flat_features[:, TIMESTAMP_INDEX] < stimuli_session_end
+                )
+            )
+        ] = STIMULI_FLAG_STIMULI_SESSION
+
+        flags[
+            np.where(
+                flat_features[:, TIMESTAMP_INDEX] < stimuli_session_start
+            )
+        ] = STIMULI_FLAG_BEFORE_FIRST_STIMULI_SESSION
+
+        flags[
+            np.where(
+                flat_features[:, TIMESTAMP_INDEX] > stimuli_session_end
+            )
+        ] = STIMULI_FLAG_AFTER_STIMULI_SESSION
+
         for session in stimuli_windows:
             window_start = session[0] * SR
             window_end = session[1] * SR
-            flags[np.where(np.logical_and(window_start < flat_features[:, TIMESTAMP_INDEX], flat_features[:, TIMESTAMP_INDEX] < window_end))] = STIMULI_FLAG_DURING_STIMULI_WINDOW
+            flags[
+                np.where(
+                    np.logical_and(
+                        window_start < flat_features[:, TIMESTAMP_INDEX],
+                        flat_features[:, TIMESTAMP_INDEX] < window_end
+                    )
+                )
+            ] = STIMULI_FLAG_DURING_STIMULI_BLOCK
     return np.concatenate((flat_features, flags), axis=1)
 
 
 def add_sleeping_stage_flag_to_spike_features(subject: Subject, flat_features: np.ndarray) -> np.ndarray:
-    changing_points, values = sleeping_utils.get_hypnogram_changes_in_miliseconds(subject)
     flags = np.zeros((flat_features.shape[0], 1))
+    try:
+        changing_points, values = sleeping_utils.get_hypnogram_changes_in_miliseconds(subject)
+    except Exception as e:
+        print(f'Could not get sleeping stages for subject {subject.p_number}, error: {e}')
+        flags[:] = np.NAN
+        return np.concatenate((flat_features, flags), axis=1)
     for i in range(len(changing_points) - 1):
         flags[
             # finding the indexes of the spikes that are in the current sleeping stage
@@ -374,10 +433,36 @@ def stimuli_effects(subject: Subject, flat_features: np.ndarray):
             )
         )
     ]
+    stim_blocks = flat_features[
+        np.where(
+            np.logical_and(
+                flat_features[:, HYPNOGRAM_FLAG_INDEX] == HYPNOGRAM_FLAG_NREM,
+                flat_features[:, STIMULI_FLAG_INDEX] == STIMULI_FLAG_DURING_STIMULI_BLOCK
+            )
+        )
+    ]
 
-    during_stimuli = flat_features[flat_features[:, STIMULI_FLAG_INDEX] == STIMULI_FLAG_DURING_STIMULI_SESSION]
+    pause_block = flat_features[
+        np.where(
+            np.logical_and(
+                flat_features[:, HYPNOGRAM_FLAG_INDEX] == HYPNOGRAM_FLAG_NREM,
+                flat_features[:, STIMULI_FLAG_INDEX] != STIMULI_FLAG_DURING_STIMULI_BLOCK,
+                flat_features[:, STIMULI_FLAG_INDEX] == STIMULI_FLAG_STIMULI_SESSION
+            )
+        )
+    ]
+
+    during_session = flat_features[
+        np.where(
+            np.logical_and(
+                flat_features[:, HYPNOGRAM_FLAG_INDEX] == HYPNOGRAM_FLAG_NREM,
+                flat_features[:, STIMULI_FLAG_INDEX] == STIMULI_FLAG_STIMULI_SESSION,
+            )
+        )
+    ]
+
     after_stimuli = flat_features[flat_features[:, STIMULI_FLAG_INDEX] == STIMULI_FLAG_AFTER_STIMULI_SESSION]
-    return before_stimuli, during_stimuli, after_stimuli
+    return before_stimuli, stim_blocks, pause_block, during_session, after_stimuli
 
 
 def f_test(group1, group2):
@@ -398,3 +483,35 @@ def t_test(group1: np.ndarray, group2: np.ndarray):
     f_p_val = np.format_float_scientific(f_p_val, precision=2)
     t_p_val = np.format_float_scientific(t_p_val, precision=2)
     return t_p_val, f_p_val
+
+
+def remove_subject_number_from_indexes(subject_number: int, indexes: np.ndarray) -> np.ndarray:
+    return indexes % subject_number
+
+
+def calculate_sub_group_probabilities_3d(subject_number: int, group_of_indexes: np.ndarray,
+                                         sub_group_of_indexes: np.ndarray) -> dict:
+    group = remove_subject_number_from_indexes(subject_number, group_of_indexes)
+    sub_group = remove_subject_number_from_indexes(subject_number, sub_group_of_indexes)
+
+    # Compute frequency counts for sub_g (sub group) and group (big group) that contains sub_g
+    sub_group_bins = np.arange(np.min(sub_group), np.max(sub_group) + 2)
+    sub_group_counts = np.histogram(sub_group, bins=sub_group_bins)[0]
+
+    # Compute frequency counts for group and sub_group
+    group_bins = np.arange(np.min(group), np.max(group) + 2)
+    group_counts = np.histogram(group, bins=group_bins)[0]
+
+    # Create histograms for sub_group and group
+    sub_group_hist = {n: count for n, count in zip(sub_group_bins, sub_group_counts)}
+    group_hist = {n: count for n, count in zip(group_bins, group_counts)}
+
+    # Compute probabilities for sub_group and group that contains sub_g
+    return {add_subject_number_to_index(subject_number, n): (sub_group_hist.get(n, 0) / count) for n, count in
+            group_hist.items()}
+
+
+def add_subject_number_to_index(subject_number: int, index: int) -> int:
+    subject_number = int(subject_number)
+    index = int(index)
+    return int(f'{subject_number}{index}')
