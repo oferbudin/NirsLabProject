@@ -12,7 +12,12 @@ PACKAGE_NAME = 'NirsLabProject'
 # parse_requirements() returns generator of pip.req.InstallRequirement objects
 project_absolute_path = os.path.dirname(os.path.abspath(__file__))
 install_reqs = parse_requirements(os.path.join(project_absolute_path, PACKAGE_NAME, 'env', 'requirements.txt'), session=False)
-reqs = [str(ir.requirement) for ir in install_reqs]
+
+try:
+    reqs = [str(ir.req) for ir in install_reqs]
+except:
+    reqs = [str(ir.requirement) for ir in install_reqs]
+# reqs = [str(ir.requirement) for ir in install_reqs]
 
 setup(
     name=PACKAGE_NAME,

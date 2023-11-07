@@ -329,6 +329,8 @@ def detect_spikes_of_subject(subject: Subject, raw: mne.io.Raw, sleep_cycle_data
 
     if os.path.exists(subject.paths.subject_spikes_path):
         return np.load(subject.paths.subject_spikes_path, allow_pickle=True)
+    if 'LFP' in subject.name:
+        return np.load(subject.paths.subject_spikes_path.replace('_LFP', ''), allow_pickle=True)
 
     if sleep_cycle_data:
         start_timestamp, end_timestamp = sleeping_utils.get_timestamps_in_seconds_of_first_rem_sleep(subject)

@@ -23,7 +23,7 @@ def resample_and_filter_data(subject: Subject):
         raw = utils.pick_seeg_channels(raw)
         utils.clean_channels_name_in_raw_obj(raw)
         print(f'Resampling data, it might take some time... (around {len(raw.ch_names) * 5 // 60} minutes)')
-        raw.resample(SR, n_jobs=2)
+        raw.resample(SR)
         raw.save(subject.paths.subject_resampled_fif_path)
     return mne.io.read_raw_fif(subject.paths.subject_resampled_fif_path)
 
@@ -36,8 +36,19 @@ def channel_processing(subject: Subject, raw: mne.io.Raw, spikes_windows: Dict[s
     filtered_channel_raw = channel_raw.copy().filter(l_freq=LOW_THRESHOLD_FREQUENCY, h_freq=HIGH_THRESHOLD_FREQUENCY)
     filtered_channel_data = filtered_channel_raw.get_data()[0]
     filtered_channel_data = sp_stats.zscore(filtered_channel_data)
-    channel_spikes_windows = spikes_windows[channel_name]
-    channel_spikes_indexes = utils.get_spikes_peak_indexes_in_spikes_windows(filtered_channel_data, channel_spikes_windows)
+    if '018' in subject.name and 'RA' in channel_name:
+        channel_spikes_windows = spikes_windows[channel_name] if 'LFP' not in subject.name else spikes_windows[f'{channel_name[:-1]}3']
+    else:
+        channel_spikes_windows = spikes_windows[channel_name] if 'LFP' not in subject.name else spikes_windows[f'{channel_name[:-1]}1']
+    if 'LFP' in subject.name:
+        if '018' in subject.name and 'RA' in channel_name:
+            channel_spikes_indexes = np.load(
+                os.path.join(subject.paths.subject_spikes_dir_path, f'peaks-{channel_name[:-1]}3.npz.npy').replace('_LFP',''))
+        else:
+            channel_spikes_indexes = np.load(os.path.join(subject.paths.subject_spikes_dir_path, f'peaks-{channel_name[:-1]}1.npz.npy').replace('_LFP', ''))
+    else:
+        channel_spikes_indexes = utils.get_spikes_peak_indexes_in_spikes_windows(filtered_channel_data, channel_spikes_windows)
+        np.save(os.path.join(subject.paths.subject_spikes_dir_path, f'peaks-{channel_name}.npz'), channel_spikes_indexes)
     amplitudes, lengths = utils.extract_spikes_peaks_features(filtered_channel_data, channel_spikes_indexes)
 
     features = [None] * NUM_OF_FEATURES
@@ -54,11 +65,11 @@ def channel_processing(subject: Subject, raw: mne.io.Raw, spikes_windows: Dict[s
         axis=1
     )
 
-    if channel_name.endswith('1'):
-        plotting.create_TFR_plot(subject, channel_raw, channel_spikes_indexes, channel_name)
-        plotting.create_PSD_plot(subject, channel_raw, channel_spikes_indexes, channel_name)
-        plotting.create_ERP_plot(subject, filtered_channel_raw, channel_spikes_indexes, channel_name)
-        plotting.create_channel_features_histograms(subject, amplitudes, lengths, channel_name)
+    # if channel_name.endswith('1') or 'LFP' in subject.name:
+    plotting.create_TFR_plot(subject, channel_raw, channel_spikes_indexes, channel_name)
+    plotting.create_PSD_plot(subject, channel_raw, channel_spikes_indexes, channel_name)
+    plotting.create_ERP_plot(subject, filtered_channel_raw, channel_spikes_indexes, channel_name)
+    plotting.create_channel_features_histograms(subject, amplitudes, lengths, channel_name)
 
     return channel_spikes_features
 
@@ -67,11 +78,11 @@ def main(subject_name: str):
     subject = Subject(subject_name, True)
 
     raw = resample_and_filter_data(subject)
-
+    raw = mne.io.read_raw(subject.paths.subject_raw_fif_path)
     spikes_windows = spikes_detection.detect_spikes_of_subject(subject, raw)
 
     # calls channel_processing with the given arguments in parallel on all cpu cores for each channel
-    channel_names = spikes_windows.keys()
+    channel_names = spikes_windows.keys() if 'LFP' not in subject.name else raw.ch_names
     channels_spikes = Parallel(n_jobs=os.cpu_count(), backend='multiprocessing')(
         delayed(channel_processing)(subject, raw, dict(spikes_windows), channel_name, i) for i, channel_name in enumerate(channel_names)
     )
@@ -110,6 +121,7 @@ def main(subject_name: str):
 if __name__ == '__main__':
     start_time = time.time()
     # main('p396')
-    main('p487')
-    # main('p489')
+    # main('p487')
+    main('p018_MTL')
+    # main('p018_MTL_LFP')
     print(f'Time taken: {(time.time() - start_time) / 60} minutes')
