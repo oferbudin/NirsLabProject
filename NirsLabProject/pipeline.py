@@ -1,11 +1,15 @@
+import os
 import time
 
 import numpy as np
 
+from NirsLabProject.config import consts
 from NirsLabProject.config.consts import *
+from NirsLabProject.config.paths import Paths
 from NirsLabProject.config.subject import Subject
 from NirsLabProject.utils import pipeline_utils
 from NirsLabProject.utils import scalp_spikes_detection, intracranial_spikes_detection, plotting
+from NirsLabProject.utils.google_drive_download import download_subject_data_one_by_one
 
 
 def main(subject_name: str):
@@ -45,12 +49,38 @@ def main(subject_name: str):
         plotting.plot_scalp_detection_probability_for_every_electrode_in_3d(subject, flat_features, index_to_channel)
 
 
+# subjects_names can be a list of subjects that have files in Google Drive
+# or None to download all subjects
+# e.g. run_all_detection_project(['p1', 'p2'])
+def run_all_stimuli_project(subjects_names: list = None):
+    for p in download_subject_data_one_by_one(consts.STIM_PROJECT_GOOGLE_FRIVE_LINK, subjects_names):
+        print(f'Processing {p}')
+        try:
+            main(p.name)
+        except Exception as e:
+            print(f'Failed to process {p.name} due to {e}')
+
+
+# subjects_names can be a list of subjects that have files in Google Drive
+# or None to download all subjects
+# e.g. run_all_detection_project(['p1', 'p2'])
+def run_all_detection_project(subjects_names: list = None):
+    for p in download_subject_data_one_by_one(consts.DETECTION_PROJECT_GOOGLE_FRIVE_LINK, subjects_names):
+        print(f'Processing {p}')
+        try:
+            main(p.name)
+        except Exception as e:
+            print(f'Failed to process {p.name} due to {e}')
+
+
 if __name__ == '__main__':
     start_time = time.time()
 
-    patients = ['p13', 'p17', 'p18', 'p25', 'p39']
-    for p in patients:
-        main(p)
+    # for p in [p.split('.')[0] for p in os.listdir(Paths.raw_data_dir_path) if p.startswith('p')]:
+    #         print(f'Processing {p}')
+    #         main(p)
+
+    run_all_stimuli_project()
 
     pipeline_utils.detection_project_intersubjects_plots(True)
     pipeline_utils.stimuli_effects()

@@ -88,7 +88,15 @@ STIMULI_FLAG_AFTER_STIMULI_SESSION = 3
 
 HYPNOGRAM_FLAG_REM_OR_WAKE = 0
 HYPNOGRAM_FLAG_NREM = 1
+
 # ----------------------------------------------------------------------------------------------------------------------
 
 DETECTION_PROJECT_INTERSUBJECTS_SUBJECT_NAME = 'd2'
 STIMULI_PROJECT_INTERSUBJECTS_SUBJECT_NAME = 's1'
+
+
+# ----------------------------------------------------------------------------------------------------------------------
+
+SHARED_GOOGLE_DRIVE_PATH = 'https://drive.google.com/drive/u/1/folders/15kVUjay5dT-u4yyNMsXExfvolwErD-78'
+GOOGLE_DRIVE_LINK = 'https://drive.google.com/drive/u/1/folders/1Ujjzk1WRMnNM48ttfm5VO9A_fqZ-8fyL'
+DETECTION_PROJECT_GOOGLE_FRIVE_LINK = 'https://drive.google.com/drive/u/1/folders/1cLBAXj-eKIwxsE81gjt2MUwAur5xRjrq'

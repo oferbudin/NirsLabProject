@@ -23,6 +23,7 @@ def resample_and_filter_data(subject: Subject):
         raw = mne.io.read_raw_edf(subject.paths.subject_raw_edf_path)
         raw = utils.pick_seeg_and_eog_channels(raw)
         utils.clean_channels_name_in_raw_obj(raw)
+        print(f'Raw data shape: {raw.tmax - raw.tmin} seconds, {raw.ch_names} channels, {raw.info["sfreq"]} Hz')
         raw = utils.remove_bad_channels(raw)
         if raw.info['sfreq'] != SR:
             print(f'Resampling data, it might take some time... (around {len(raw.ch_names) * 5 // 60} minutes)')
@@ -33,7 +34,7 @@ def resample_and_filter_data(subject: Subject):
         print('Data was already resampled, reading it...')
         raw = mne.io.read_raw_fif(subject.paths.subject_resampled_fif_path)
         print(
-            f'Raw data shape: {raw.tmax - raw.tmin} seconds, {len(raw.ch_names)} channels, {raw.info["sfreq"]} Hz')
+            f'Raw data shape: {raw.tmax - raw.tmin} seconds, {raw.info["sfreq"]} Hz, channels  {raw.ch_names}')
 
     seeg_raw = raw.copy().pick_channels([ch for ch in raw.ch_names if 'EOG' not in ch])
     eog_raw = raw.copy().pick_channels([ch for ch in raw.ch_names if 'EOG' in ch])

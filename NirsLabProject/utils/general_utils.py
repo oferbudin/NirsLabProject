@@ -205,7 +205,7 @@ def catch_exception(func):
             return func(*args, **kwargs)
         except Exception as e:
             print(f'function {func.__name__} with args {args}, kwargs {kwargs} failed: {traceback.format_exc()}')
-            return None
+            raise e
     return wrapper
 
 
