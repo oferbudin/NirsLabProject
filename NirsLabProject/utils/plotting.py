@@ -146,8 +146,8 @@ def create_raster_plot(subject: Subject, tmin: float, tmax: float, spikes: Dict[
     add_histogram and add_histogram_to_fig(ax, channels_data)
 
     # set raster plot start and end time to be the same as the edf file
-    channels_data[0][0] = tmin
-    channels_data[0][-1] = tmax
+    if not channels_data[0]:
+        channels_data[0] = np.array([tmin, tmax])
 
     # add the main plot - the raster
     ax.eventplot(
