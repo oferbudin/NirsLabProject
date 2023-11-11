@@ -86,7 +86,7 @@ def extract_spikes_features(subject: Subject, seeg_raw: mne.io.Raw, intracranial
     if FORCE_CALCULATE_SPIKES_FEATURES or not os.path.exists(subject.paths.subject_channels_spikes_features_path):
         # calls channel_processing with the given arguments in parallel on all cpu cores for each channel
         channel_names = intracranial_spikes_spikes_windows.keys()
-        channel_name_to_coordinates = utils.calculate_coordinates()
+        channel_name_to_coordinates = utils.calculate_coordinates(subject)
         channels_spikes = Parallel(n_jobs=os.cpu_count(), backend='multiprocessing')(
             delayed(channel_processing)(subject, seeg_raw, dict(intracranial_spikes_spikes_windows), channel_name, i,
                                         channel_name_to_coordinates) for i, channel_name in enumerate(channel_names) if

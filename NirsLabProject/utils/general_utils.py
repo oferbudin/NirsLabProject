@@ -209,36 +209,74 @@ def catch_exception(func):
     return wrapper
 
 
-def calculate_coordinates():
+def calculate_coordinates_sourasky(subject: Subject):
+    data = pd.read_csv(
+        filepath_or_buffer=Paths.sourasky_coordinates_path,
+        delimiter=','
+    )
+
+    subject_name = f'D0{subject.p_number}' if subject.p_number < 100 else f'D{subject.p_number}'
+    subjects_data = data[data['Subject'] == subject_name]
+    if subjects_data.empty:
+        return {}
+
+    coords = {}
+    for i, row in subjects_data.iterrows():
+        coords[row['Channel Name'].replace("'", "")] = (row['MNI_X'], row['MNI_Y'], row['MNI_Z'])
+
+    return coords
+
+
+def read_coordinates_files(electrodes_name_file_path: str, electrodes_location_file_path: str):
+    name_data = pd.read_csv(
+        filepath_or_buffer=electrodes_name_file_path,
+        delimiter=' ',
+        usecols=[0],
+        skiprows=2,
+        dtype={0: str}
+    )
+
+    location_data = pd.read_csv(
+        filepath_or_buffer=electrodes_location_file_path,
+        delimiter=' ',
+        skiprows=2,
+        header=None,
+        dtype={0: float, 1: float, 2: float}
+    )
+
+    name_to_coordinates = {}
+    for names_row, location_row in zip(name_data.iterrows(), location_data.iterrows()):
+        electrode_name = f'{names_row[1][0]}'
+        name_to_coordinates[electrode_name] = (
+            location_row[1][0],
+            location_row[1][1],
+            location_row[1][2]
+        )
+    return name_to_coordinates
+
+
+def calculate_coordinates(subject: Subject):
+    print(f'calculating coordinates for subject {subject.p_number}')
+    if subject.sourasky_project:
+        return calculate_coordinates_sourasky(subject)
+    if os.path.exists(subject.paths.subject_electrode_name_file) and os.path.isfile(subject.paths.subject_electrode_locations):
+        return read_coordinates_files(subject.paths.subject_electrode_name_file, subject.paths.subject_electrode_locations)
+
+    print('no coordinates file found, calculating coordinates from average coordinates files')
     _sum = {}
     count = {}
-    for file in [file for file in os.listdir(Paths.coordinates_data_dir_path) if file.endswith('Loc.txt')]:
+    for file in [file for file in os.listdir(Paths.coordinates_data_dir_path) if file.endswith('.electrodeNames')]:
         loc_file_path = os.path.join(Paths.coordinates_data_dir_path, file)
-        loc_data = pd.read_csv(
-            filepath_or_buffer=loc_file_path,
-            delimiter=' ',
-            usecols=[0, 1],
-            header=None,
-            dtype={0: str, 1: int}
-        )
-        pial_file_path = os.path.join(Paths.coordinates_data_dir_path, file.replace('PostimpLoc.txt', '.Pial'))
-        pial_data = pd.read_csv(
-            filepath_or_buffer=pial_file_path,
-            delimiter=' ',
-            skiprows=2,
-            header=None,
-            dtype={0: float, 1: float, 2: float}
-        )
-
-        for loc_electrode, pial_electrode in zip(loc_data.iterrows(), pial_data.iterrows()):
-            electrode_name = f'{loc_electrode[1][0]}{loc_electrode[1][1]}'
+        pial_file_path = os.path.join(Paths.coordinates_data_dir_path, file.replace('.electrodeNames', '.Pial'))
+        electrode_name_to_location = read_coordinates_files(loc_file_path, pial_file_path)
+        for electrode_name, location in electrode_name_to_location.items():
             if electrode_name not in _sum:
                 _sum[electrode_name] = [0, 0, 0]
                 count[electrode_name] = 0
             count[electrode_name] += 1
-            _sum[electrode_name][0] += pial_electrode[1][0]
-            _sum[electrode_name][1] += pial_electrode[1][1]
-            _sum[electrode_name][2] += pial_electrode[1][2]
+            _sum[electrode_name][0] += location[0]
+            _sum[electrode_name][1] += location[1]
+            _sum[electrode_name][2] += location[2]
 
     for electrode in _sum:
         _sum[electrode][0] /= count[electrode]

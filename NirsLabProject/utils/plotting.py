@@ -387,9 +387,10 @@ def create_channel_features_histograms(subject: Subject, amplitudes: np.ndarray,
 #
 #     brain.close()
 
+
 def save_electrodes_position(raw: mne.io.Raw, subject: Subject, stimulation_locations: List[str]):
     print('Saving electrodes position')
-    ch_to_cord = utils.calculate_coordinates()
+    ch_to_cord = utils.calculate_coordinates(subject)
     ch_names = set(name for name in raw.ch_names).intersection(ch_to_cord.keys())
     ch_names = sorted([name for name in ch_names])
 

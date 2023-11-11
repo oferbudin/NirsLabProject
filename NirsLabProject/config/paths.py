@@ -11,6 +11,7 @@ class Paths:
     hypnogram_data_dir_path = os.path.join(data_dir_path, 'hypnograms')
     products_data_dir_path = os.path.join(data_dir_path, 'products')
     coordinates_data_dir_path = os.path.join(data_dir_path, 'cordinates')
+    sourasky_coordinates_path = os.path.join(coordinates_data_dir_path, 'sourasky_coords.csv')
 
     def __init__(self, subject: str, bipolar: bool):
         self.subject_products_dir_path = os.path.join(self.products_data_dir_path, subject)
@@ -31,6 +32,8 @@ class Paths:
         self.subject_tfr_plots_dir_path = os.path.join(self.subject_plots_dir_path, "TFRs")
         self.subject_histogram_plots_dir_path = os.path.join(self.subject_plots_dir_path, "Histograms")
         self.subject_features_3d_plots_dir_path = os.path.join(self.subject_plots_dir_path, "Features_3D")
+        self.subject_electrode_name_file = os.path.join(self.coordinates_data_dir_path, f'{subject[1:]}.electrodeNames')
+        self.subject_electrode_locations = os.path.join(self.coordinates_data_dir_path, f'{subject[1:]}.PIAL')
         self.subject_raw_edf_path = os.path.join(self.raw_data_dir_path, f'{subject}.edf')
         self.subject_stimuli_path = os.path.join(self.stimuli_dir_path, f'{subject}_stim_timing.csv')
         self.subject_resampled_fif_path = os.path.join(self.subject_resampled_data_dir_path, f'{subject}_resampled.fif')
