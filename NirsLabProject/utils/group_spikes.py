@@ -6,6 +6,7 @@ import scipy
 
 from NirsLabProject.config.consts import *
 from NirsLabProject.config.subject import Subject
+from NirsLabProject.utils import general_utils as utils
 
 
 # Python 3 program to merge K sorted arrays of size N each.
@@ -159,10 +160,11 @@ class Group:
         _electrode_depths = set()
         for record in group:
             channel = index_to_channel[record[1]]
-            _electrode_depths.add(channel[-1])
+            electrode_name, contact_number = utils.extract_channel_name_and_contact_number(channel)
+            _electrode_depths.add(contact_number)
             # adds the hemisphere 'L' or 'R' and the structure 'HPC', 'EC' etc...
-            self.hemispheres.add(channel[0])
-            self.structures.add(channel[:-1])
+            self.hemispheres.add(electrode_name[0])
+            self.structures.add(electrode_name)
 
         self.deepest_electrode = min(_electrode_depths)
         self.shallowest_electrode = max(_electrode_depths)

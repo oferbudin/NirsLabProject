@@ -36,10 +36,12 @@ class Paths:
         self.subject_electrode_locations = os.path.join(self.coordinates_data_dir_path, f'{subject[1:]}.PIAL')
         self.subject_raw_edf_path = os.path.join(self.raw_data_dir_path, f'{subject}.edf')
         self.subject_stimuli_path = os.path.join(self.stimuli_dir_path, f'{subject}_stim_timing.csv')
-        self.subject_resampled_fif_path = os.path.join(self.subject_resampled_data_dir_path, f'{subject}_resampled.fif')
         self.subject_hypnogram_path = os.path.join(self.hypnogram_data_dir_path, f'{subject}_hypno.txt')
         self.subject_sleep_scoring_path = os.path.join(self.hypnogram_data_dir_path, f'{subject}_sleep_scoring.m')
         self.subject_spikes_path = os.path.join(self.subject_spikes_dir_path, f'{subject}_spikes.npz')
         self.subject_raster_plot_path = os.path.join(self.subject_raster_plots_dir_path, f'{subject}_raster_plot.png')
         self.subject_hypno_raster_plot_path = os.path.join(self.subject_raster_plots_dir_path, f'{subject}_hypno_raster_plot.png')
         self.subject_cut_hypno_raster_plot_path = os.path.join(self.subject_raster_plots_dir_path, f'{subject}_cut_hypno_raster_plot.png')
+
+    def subject_resampled_fif_path(self, subject, electrode_name):
+        return os.path.join(self.subject_resampled_data_dir_path, f'{subject}_resampled_{electrode_name}.fif')

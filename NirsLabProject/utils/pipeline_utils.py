@@ -1,4 +1,5 @@
 import os
+import re
 from typing import Dict
 
 import mne
@@ -17,28 +18,56 @@ from NirsLabProject.utils.group_spikes import group_spikes
 from NirsLabProject.utils import plotting
 
 
+def group_spikes_by_electrodes(raw_edf: mne.io.Raw) -> Dict[str, list]:
+    electrodes = {}
+    for electrode in raw_edf.ch_names:
+        electrode_name, _ = utils.extract_channel_name_and_contact_number(electrode)
+        if electrode_name not in electrodes:
+            electrodes[electrode_name] = []
+        electrodes[electrode_name].append(electrode)
+    return electrodes
+
+
 def resample_and_filter_data(subject: Subject):
-    if FORCE_LOAD_EDF or not os.path.exists(subject.paths.subject_resampled_fif_path):
-        print('Reading raw data...')
+    print('Reading raw data...')
+    loaded_raw = {}
+    print(os.listdir(subject.paths.subject_resampled_data_dir_path))
+    if FORCE_LOAD_EDF or not os.listdir(subject.paths.subject_resampled_data_dir_path):
+        print('Reampled data not exist exists, loading...')
         raw = mne.io.read_raw_edf(subject.paths.subject_raw_edf_path)
         raw = utils.pick_seeg_and_eog_channels(raw)
-        utils.clean_channels_name_in_raw_obj(raw)
+        utils.clean_channels_name_in_raw_obj(subject, raw)
         print(f'Raw data shape: {raw.tmax - raw.tmin} seconds, {raw.ch_names} channels, {raw.info["sfreq"]} Hz')
-        raw = utils.remove_bad_channels(raw)
-        if raw.info['sfreq'] != SR:
-            print(f'Resampling data, it might take some time... (around {len(raw.ch_names) * 5 // 60} minutes)')
-            raw.resample(SR, n_jobs=2)
-            print('Saving resampled data...')
-        raw.save(subject.paths.subject_resampled_fif_path, overwrite=True)
+        for electrode_name, group in group_spikes_by_electrodes(raw).items():
+            electrode_path = subject.paths.subject_resampled_fif_path(subject.name, electrode_name)
+            if FORCE_LOAD_EDF or not os.path.exists(electrode_path):
+                print(f'Pre-processing channels of electrode {electrode_name}...')
+                raw_electrode = raw.copy().pick_channels(group)
+                # raw_electrode = utils.remove_bad_channels(raw_electrode) TODO: check if needed - not working
+                if raw_electrode.info['sfreq'] != SR:
+                    print(f'Resampling data, it might take some time... (around {len(raw_electrode.ch_names) * 5 // 60} minutes)')
+                    raw_electrode = raw_electrode.resample(SR, verbose=True, n_jobs=2)
+                print('applying notch filter...')
+                raw_electrode = raw_electrode.notch_filter(50 if subject.sourasky_project else 60, n_jobs=2, verbose=True)
+                print('applying band pass filter...')
+                raw_electrode = raw_electrode.filter(0.1, 499, verbose=True, n_jobs=2)
+                print('Saving resampled data...')
+                raw_electrode.save(electrode_path, split_size='2GB', verbose=True, overwrite=True)
+                loaded_raw[electrode_name] = raw_electrode
     else:
-        print('Data was already resampled, reading it...')
-        raw = mne.io.read_raw_fif(subject.paths.subject_resampled_fif_path)
-        print(
-            f'Raw data shape: {raw.tmax - raw.tmin} seconds, {raw.info["sfreq"]} Hz, channels  {raw.ch_names}')
-
-    seeg_raw = raw.copy().pick_channels([ch for ch in raw.ch_names if 'EOG' not in ch])
-    eog_raw = raw.copy().pick_channels([ch for ch in raw.ch_names if 'EOG' in ch])
-    return seeg_raw, eog_raw
+        electrodes_fif = os.listdir(subject.paths.subject_resampled_data_dir_path)
+        for electrode_name in electrodes_fif:
+            electrode_name = re.search(r'_resampled_(.*)\.fif', electrode_name)
+            if electrode_name is None:
+                continue
+            electrode_name = electrode_name.group(1)
+            electrode_path = subject.paths.subject_resampled_fif_path(subject.name, electrode_name)
+            print(f'Data for electrode {electrode_name} was already resampled, reading it...')
+            channel_raw = mne.io.read_raw_fif(electrode_path)
+            utils.clean_channels_name_in_raw_obj(subject, channel_raw)
+            loaded_raw[electrode_name] = channel_raw
+            print(f'Raw data shape: {channel_raw.tmax - channel_raw.tmin} seconds, {channel_raw.ch_names} channels, {channel_raw.info["sfreq"]} Hz')
+    return loaded_raw
 
 
 # Filter the data and plot the spikes
@@ -48,8 +77,8 @@ def channel_processing(subject: Subject, raw: mne.io.Raw, spikes_windows: Dict[s
 
     channel_raw = raw.copy().pick_channels([channel_name])
     channel_raw.load_data()
-    filtered_channel_raw = channel_raw.copy().filter(l_freq=LOW_THRESHOLD_FREQUENCY, h_freq=HIGH_THRESHOLD_FREQUENCY)
-    filtered_channel_data = filtered_channel_raw.get_data()[0]
+    filtered_channel_raw = channel_raw.copy()
+    filtered_channel_data = channel_raw.get_data()[0]
     filtered_channel_data = sp_stats.zscore(filtered_channel_data)
     channel_spikes_windows = spikes_windows[channel_name]
     channel_spikes_indexes = utils.get_spikes_peak_indexes_in_spikes_windows(filtered_channel_data, channel_spikes_windows)
@@ -81,21 +110,25 @@ def channel_processing(subject: Subject, raw: mne.io.Raw, spikes_windows: Dict[s
     return channel_spikes_features
 
 
-def extract_spikes_features(subject: Subject, seeg_raw: mne.io.Raw, intracranial_spikes_spikes_windows: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
+def extract_spikes_features(subject: Subject, seeg_raw: dict[str, mne.io.Raw], intracranial_spikes_spikes_windows: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
     print('Extracting spikes features...')
     if FORCE_CALCULATE_SPIKES_FEATURES or not os.path.exists(subject.paths.subject_channels_spikes_features_path):
-        # calls channel_processing with the given arguments in parallel on all cpu cores for each channel
-        channel_names = intracranial_spikes_spikes_windows.keys()
+        channels_spikes_features = {}
+        detected_channel_names = intracranial_spikes_spikes_windows.keys()
         channel_name_to_coordinates = utils.calculate_coordinates(subject)
-        channels_spikes = Parallel(n_jobs=os.cpu_count(), backend='multiprocessing')(
-            delayed(channel_processing)(subject, seeg_raw, dict(intracranial_spikes_spikes_windows), channel_name, i,
-                                        channel_name_to_coordinates) for i, channel_name in enumerate(channel_names) if
-            channel_name in seeg_raw.ch_names
-        )
+        index = 0
+        for electrode_name, electrode_raw in seeg_raw.items():
+            for channel_name in electrode_raw.ch_names:
+                if channel_name not in detected_channel_names:
+                    continue
+                channel_features = channel_processing(
+                    subject, electrode_raw, dict(intracranial_spikes_spikes_windows), channel_name, index, channel_name_to_coordinates)
 
-        # creating a dictionary of the results
-        channels_spikes_features = {channel_name: channel_spikes for channel_name, channel_spikes in
-                                    zip(channel_names, channels_spikes) if channel_spikes is not None}
+                if channel_features is None:
+                    continue
+
+                index += 1
+                channels_spikes_features[channel_name] = channel_features
 
         # saving the results
         np.save(subject.paths.subject_channels_spikes_features_path, channels_spikes_features)
@@ -114,7 +147,7 @@ def get_index_to_channel(subject: Subject, channels_spikes_features: Dict[str, n
     return index_to_channel
 
 
-def get_flat_features(subject: Subject, seeg_raw: mne.io.Raw, intracranial_spikes_spikes_windows: Dict[str, np.ndarray], scalp_spikes_spikes_windows: np.ndarray):
+def get_flat_features(subject: Subject, seeg_raw: dict[str, mne.io.Raw], intracranial_spikes_spikes_windows: Dict[str, np.ndarray], scalp_spikes_spikes_windows: np.ndarray):
     # extracts spikes features
     channels_spikes_features = extract_spikes_features(subject, seeg_raw, intracranial_spikes_spikes_windows)
 
@@ -141,19 +174,26 @@ def get_flat_features(subject: Subject, seeg_raw: mne.io.Raw, intracranial_spike
     return flat_features, channels_spikes_features, index_to_channel, groups
 
 
-def create_raster_plots(subject: Subject, seeg_raw: mne.io.Raw, channels_spikes_features: Dict[str, np.ndarray], scalp_spikes_windows: np.ndarray):
+def create_raster_plots(subject: Subject, seeg_raw: dict[str, mne.io.Raw], channels_spikes_features: Dict[str, np.ndarray], scalp_spikes_windows: np.ndarray):
     # converting the timestamps to seconds
     channel_spikes = {channel_name: channel_spikes[:, TIMESTAMP_INDEX] / SR for channel_name, channel_spikes in
                       channels_spikes_features.items()}
     eog_channels_spikes = {'EOG1': [spike for spike in scalp_spikes_windows]}
     channel_spikes.update(eog_channels_spikes)
 
+    tmin = tmax = 0
+    for channel_name, channel_raw in seeg_raw.items():
+        if channel_name:
+            tmin = channel_raw.tmin
+            tmax = channel_raw.tmax
+        break
+
     # raster plot with hypnogram and histogram
     plotting.create_raster_plot(
         subject=subject,
         spikes=channel_spikes,
-        tmin=seeg_raw.tmin,
-        tmax=seeg_raw.tmax,
+        tmin=tmin,
+        tmax=tmax,
         add_hypnogram=True,
         add_histogram=True,
     )
@@ -162,19 +202,20 @@ def create_raster_plots(subject: Subject, seeg_raw: mne.io.Raw, channels_spikes_
     plotting.create_raster_plot(
         subject=subject,
         spikes=channel_spikes,
-        tmin=seeg_raw.tmin,
-        tmax=seeg_raw.tmax,
+        tmin=tmin,
+        tmax=tmax,
         add_hypnogram=False,
         add_histogram=True,
     )
 
 
-def save_electrodes_coordinates(subject: Subject, seeg_raw: mne.io.Raw):
+def save_electrodes_coordinates(subject: Subject, raw: dict[str, mne.io.Raw]):
     if subject.stimuli_project:
         stimulation_locations = utils.pars_stimuli_locations_file(subject)
     else:
         stimulation_locations = []
-    plotting.save_electrodes_position(seeg_raw, subject, stimulation_locations)
+    plotting.save_electrodes_position(raw, subject, stimulation_locations)
+
 
 def get_features_of_subjects(subjects):
     flat_features = []

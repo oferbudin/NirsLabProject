@@ -2,11 +2,10 @@ import os
 import mne
 import numpy as np
 import pandas as pd
-from typing import List, Dict, Tuple
+from typing import List, Dict
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import matplotlib.colors as mcolors
-from matplotlib.ticker import LogFormatter
 from mne.time_frequency import tfr_morlet
 import scipy.io as sio
 from nilearn import plotting
@@ -21,12 +20,19 @@ COLOR_CODES = np.array(['#000000', '#332288', '#117733', '#CC6677', '#AA4499'])
 
 
 # assigns color to each channel so no two consecutive channels will have the same color
-def get_channel_names_and_color(channels: List[str]) -> Dict[str, str]:
-    colors = {}
-    channels = dict.fromkeys(c[:-1] for c in channels)
-    for i, channel in enumerate(channels):
-        colors[channel] = COLOR_CODES[i % len(COLOR_CODES)]
-    return colors
+def get_channel_names_and_color(channels: List[str]) -> list[str]:
+    channels_color = []
+    electrode_colors = {}
+    electrode_names = []
+    for channel in channels:
+        electrode_name, _ = utils.extract_channel_name_and_contact_number(channel)
+        electrode_names.append(electrode_name)
+    for i, channel in enumerate(electrode_names):
+        electrode_colors[channel] = COLOR_CODES[i % len(COLOR_CODES)]
+    for channel in channels:
+        electrode_name, _ = utils.extract_channel_name_and_contact_number(channel)
+        channels_color.append(electrode_colors[electrode_name])
+    return channels_color
 
 
 # adds stimuli windows to the provided plot (ax)
@@ -121,33 +127,41 @@ def get_model_name(subject: Subject) -> str:
     return f"{'bipolar' if subject.bipolar_model else 'one channel'} model"
 
 
+def custom_sort(item):
+    # Split the string into a tuple containing text and numeric parts
+    text_part = ''.join(filter(str.isalpha, item))
+    num_part = int(''.join(filter(str.isdigit, item)))
+    return text_part, num_part
+
+
 @utils.catch_exception
 # based on https://pythontic.com/visualization/charts/spikerasterplot
 def create_raster_plot(subject: Subject, tmin: float, tmax: float, spikes: Dict[str, np.ndarray], add_histogram: bool = True,
                        add_hypnogram: bool = True, show: bool = False):
-    channels_name = list(spikes.keys())
-    channels_data = list(spikes.values())
+    # sort channels by name
+    # reverse the data so the deepest channel of every electrode will be above the rest
+
+    channels_name, channels_data = zip(*sorted(zip(spikes.keys(), spikes.values()), key=lambda x: custom_sort(x[0])))
+    channels_name = list(reversed(channels_name))
+    channels_data = list(reversed(channels_data))
+
+    # assign a different color for every channel's group (same electrode)
+    colors = get_channel_names_and_color(channels_name)
 
     # set plot size and locations
     fig = plt.figure(layout='constrained')
     ax = fig.add_gridspec(top=0.75, right=0.75).subplots()
     plt.title(f"{subject.name} raster - {get_model_name(subject)}")
 
-    # assign a different color for every channel's group (same electrod2)
-    channels_color = get_channel_names_and_color(channels_name)
-    colors = [channels_color[channel[:-1]] for channel in channels_name]
-    colors.reverse()
-
-    # reverse the data so the deepest channel of every electrode will be above the rest
-    channels_name.reverse()
-    channels_data.reverse()
-
     # add hypnogram to the plot if needed
     add_histogram and add_histogram_to_fig(ax, channels_data)
 
     # set raster plot start and end time to be the same as the edf file
-    if not channels_data[0]:
+    if not channels_data:
         channels_data[0] = np.array([tmin, tmax])
+    else:
+        channels_data[0][0] = tmin
+        channels_data[0][-1] = tmax
 
     # add the main plot - the raster
     ax.eventplot(
@@ -163,8 +177,13 @@ def create_raster_plot(subject: Subject, tmin: float, tmax: float, spikes: Dict[
     # set y axis labels so only the first channel of every electrode will be labeled
     yticks = []
     for i, channel_name in enumerate(channels_name):
-        if i == len(channels_name)-1 or channel_name[:-1] != channels_name[i+1][:-1]:
-            yticks.append(channel_name[:-1])
+        current_channel_name, _ = utils.extract_channel_name_and_contact_number(channel_name)
+        if i == len(channels_name) - 1:
+            yticks.append(current_channel_name)
+            break
+        next_channel_name, _ = utils.extract_channel_name_and_contact_number(channels_name[i + 1])
+        if current_channel_name != next_channel_name:
+            yticks.append(current_channel_name)
         else:
             yticks.append('')
 
@@ -239,30 +258,36 @@ def create_raster_plot(subject: Subject, tmin: float, tmax: float, spikes: Dict[
 
 
 @utils.catch_exception
-def create_ERP_plot(subject: Subject, channel_raw: mne.io.Raw,
-                    spikes: np.ndarray, channel_name: str, show: bool = False):
+def create_ERP_plot(
+        subject: Subject, channel_raw: mne.io.Raw, spikes: np.ndarray,
+        channel_name: str, extra_title: str = '', show: bool = False
+):
     """
     channel_data: is a (N,) np array with the MNE channel (it can be filtred, etc..)
     """
+    extra_title = f' - {extra_title}' if extra_title else ''
     epochs = utils.create_epochs(channel_raw, spikes, -1, 1)
     fig = epochs.plot_image(
         show=show,
         picks=[channel_name],
         vmin=-150,
         vmax=150,
-        title=f'{subject.name} {channel_name} ERP\nn={len(spikes)} - {get_model_name(subject)}'
+        title=f'{subject.name} {channel_name} ERP\nn={len(spikes)} - {get_model_name(subject)}{extra_title}'
     )[0]
-    fig.savefig(os.path.join(subject.paths.subject_erp_plots_dir_path, f'{subject.name}-{channel_name}.png'),  dpi=1000)
+    fig.savefig(os.path.join(subject.paths.subject_erp_plots_dir_path, f'{subject.name}-{channel_name}{extra_title}.png'),  dpi=1000)
     if show:
         plt.show()
 
 
 @utils.catch_exception
 # channel_raw must not be filtred
-def create_TFR_plot(subject: Subject, channel_raw: mne.io.Raw,
-                    spikes_timestamps: np.ndarray, channel_name: str, show: bool = False):
+def create_TFR_plot(
+        subject: Subject, channel_raw: mne.io.Raw, spikes_timestamps: np.ndarray,
+        channel_name: str, extra_title: str = '', show: bool = False
+):
+    extra_title = f' - {extra_title}' if extra_title else ''
     epochs = utils.create_epochs(channel_raw, spikes_timestamps, -1, 1)
-    freqs = np.logspace(*np.log10([5, 250]), num=100)
+    freqs = np.logspace(*np.log10([5, 499]), num=100)
     power, _ = tfr_morlet(
         inst=epochs,
         freqs=freqs,
@@ -277,9 +302,9 @@ def create_TFR_plot(subject: Subject, channel_raw: mne.io.Raw,
         show=show,
         mode='logratio',
         baseline=(-1, 1),
-        title=f'{subject.name} {channel_name} TFR\nn={len(spikes_timestamps)} - {get_model_name(subject)}'
+        title=f'{subject.name} {channel_name} TFR\nn={len(spikes_timestamps)} - {get_model_name(subject)}{extra_title}'
     )
-    plt.savefig(os.path.join(subject.paths.subject_tfr_plots_dir_path, f'{subject.name}-{channel_name}.png'),  dpi=1000)
+    plt.savefig(os.path.join(subject.paths.subject_tfr_plots_dir_path, f'{subject.name}-{channel_name}{extra_title}.png'),  dpi=1000)
     if show:
         plt.show()
 
@@ -388,20 +413,23 @@ def create_channel_features_histograms(subject: Subject, amplitudes: np.ndarray,
 #     brain.close()
 
 
-def save_electrodes_position(raw: mne.io.Raw, subject: Subject, stimulation_locations: List[str]):
+def save_electrodes_position(raw: dict[str, mne.io.Raw], subject: Subject, stimulation_locations: List[str]):
     print('Saving electrodes position')
+    channel_names = []
+    for raw in raw.values():
+        channel_names.extend(raw.ch_names)
     ch_to_cord = utils.calculate_coordinates(subject)
-    ch_names = set(name for name in raw.ch_names).intersection(ch_to_cord.keys())
+    ch_names = set(name for name in channel_names).intersection(ch_to_cord.keys())
     ch_names = sorted([name for name in ch_names])
 
     marker_labels = []
-    last_organ = ""
+    last_electrode = ""
     colors = []
     for i, channel in enumerate(ch_names):
-        current_organ = channel[:-1]
-        if current_organ != last_organ:
-            last_organ = current_organ
-            marker_labels.append(current_organ)
+        electrode_name, _ = utils.extract_channel_name_and_contact_number(channel)
+        if electrode_name != last_electrode:
+            last_electrode = electrode_name
+            marker_labels.append(electrode_name)
         else:
             marker_labels.append("")
         colors.append('black')
@@ -451,7 +479,7 @@ def plot_feature_on_electrodes(subject: Subject, features: dict, name: str, unit
     marker_labels = []
     last_organ = ""
     for channel in sorted(features.keys()):
-        current_organ = channel[:-1].split('-')[-1]
+        current_organ, _ = utils.extract_channel_name_and_contact_number(channel)
         if current_organ != last_organ and current_organ not in marker_labels:
             last_organ = current_organ
             marker_labels.append(current_organ)
@@ -544,6 +572,7 @@ def plot_scalp_detection_probability_for_every_electrode_in_3d(subject: Subject,
         probs.update(_p)
 
     main(probs, "detection_probability_in_scalp_focal", offsets)
+
 
 # Gets a dict of channels and their spikes features
 def plot_number_of_spikes_by_electrode(subject: Subject, channels_spikes_features: Dict[str, np.ndarray]):
@@ -876,9 +905,119 @@ def create_erp_for_channel(subject: Subject, channel_name: str, ieeg_raw: mne.io
     channel_spikes_indexes = channel_features[:, TIMESTAMP_INDEX].reshape(-1, 1).astype(int)
     create_ERP_plot(subject, filtered_channel_raw, channel_spikes_indexes, channel_name, show)
 
-from IPython.display import HTML
+
 def create_histogram_for_channel(subject: Subject, channel_name: str, flat_features: np.ndarray, channel_to_index: Dict[str, int], show: bool = False):
     channel_features = flat_features[flat_features[:, CHANNEL_INDEX] == channel_to_index[channel_name]]
     channel_amplitudes = channel_features[:, AMPLITUDE_INDEX].reshape(-1, 1).astype(int)
     channel_duration = channel_features[:, DURATION_INDEX].reshape(-1, 1).astype(int)
     create_channel_features_histograms(subject, channel_amplitudes, channel_duration, channel_name, show)
+
+
+def create_eog_erp(
+        subject: Subject, flat_features: np.ndarray, eog_raw: mne.io.Raw, channel_name: str,
+        name_to_index: Dict[str, int], only_scalp: bool = True, show: bool = False
+):
+        channel_index = name_to_index.get(channel_name)
+        if not channel_index:
+            print(f'Channel {channel_name} not found')
+            return
+        if only_scalp:
+            filtered_indexes = np.logical_and(
+                flat_features[:, CHANNEL_INDEX] == channel_index,
+                flat_features[:, IS_IN_SCALP_INDEX] == 1
+            )
+        else:
+            filtered_indexes = flat_features[:, CHANNEL_INDEX] == channel_index
+        spikes_times = flat_features[filtered_indexes][:, TIMESTAMP_INDEX]
+        spikes_times = spikes_times.reshape(-1, 1).astype(int)
+        for channel_name in eog_raw.ch_names:
+            channel_raw = eog_raw.copy().pick_channels([channel_name])
+            channel_raw.load_data()
+            create_ERP_plot(subject, channel_raw, spikes_times, channel_name, f'spikes of - {channel_name}', show)
+
+
+def create_eog_tfr(
+        subject: Subject, flat_features: np.ndarray, eog_raw: mne.io.Raw, channel_name: str,
+        name_to_index: Dict[str, int], only_scalp: bool = True, show: bool = False
+):
+    channel_index = name_to_index.get(channel_name)
+    if not channel_index:
+        print(f'Channel {channel_name} not found')
+        return
+    if only_scalp:
+        filtered_indexes = np.logical_and(
+            flat_features[:, CHANNEL_INDEX] == channel_index,
+            flat_features[:, IS_IN_SCALP_INDEX] == 1
+        )
+    else:
+        filtered_indexes = flat_features[:, CHANNEL_INDEX] == channel_index
+    spikes_times = flat_features[filtered_indexes][:, TIMESTAMP_INDEX]
+    spikes_times = spikes_times.reshape(-1, 1).astype(int)
+    for channel_name in eog_raw.ch_names:
+        channel_raw = eog_raw.copy().pick_channels([channel_name])
+        channel_raw.load_data()
+        create_TFR_plot(subject, channel_raw, spikes_times, channel_name, f'spikes of - {channel_name}', show)
+
+
+def create_erp_of_detected_and_not_detected(
+            subject: Subject, flat_features: np.ndarray, raw: mne.io.Raw, channel_name: str,
+            name_to_index: Dict[str, int], show: bool = False
+):
+    channel_index = name_to_index.get(channel_name)
+    if not channel_index:
+        print(f'Channel {channel_name} not found')
+        return
+    only_scalp_indexes = np.logical_and(
+        flat_features[:, CHANNEL_INDEX] == channel_index,
+        flat_features[:, IS_IN_SCALP_INDEX] == 1
+    )
+
+    only_inracranial_indexes = np.logical_and(
+        flat_features[:, CHANNEL_INDEX] == channel_index,
+        flat_features[:, IS_IN_SCALP_INDEX] == 0
+    )
+
+    if channel_name not in raw.ch_names:
+        print(f'Channel {channel_name} not found')
+        return
+    channel_raw = raw.copy().pick_channels([channel_name])
+    channel_raw.load_data()
+    only_scalp_times = flat_features[only_scalp_indexes][:, TIMESTAMP_INDEX]
+    only_scalp_times = only_scalp_times.reshape(-1, 1).astype(int)
+    create_ERP_plot(subject, channel_raw, only_scalp_times, channel_name, 'detected by scalp model', show)
+
+    only_inracranial_times = flat_features[only_inracranial_indexes][:, TIMESTAMP_INDEX]
+    only_inracranial_times = only_inracranial_times.reshape(-1, 1).astype(int)
+    create_ERP_plot(subject, channel_raw, only_inracranial_times, channel_name, 'not detected by scalp model', show)
+
+
+def create_tfr_of_detected_and_not_detected(
+            subject: Subject, flat_features: np.ndarray, raw: mne.io.Raw, channel_name: str,
+            name_to_index: Dict[str, int], show: bool = False
+):
+    channel_index = name_to_index.get(channel_name)
+    if not channel_index:
+        print(f'Channel {channel_name} not found')
+        return
+    only_scalp_indexes = np.logical_and(
+        flat_features[:, CHANNEL_INDEX] == channel_index,
+        flat_features[:, IS_IN_SCALP_INDEX] == 1
+    )
+
+    only_inracranial_indexes = np.logical_and(
+        flat_features[:, CHANNEL_INDEX] == channel_index,
+        flat_features[:, IS_IN_SCALP_INDEX] == 0
+    )
+
+    if channel_name not in raw.ch_names:
+        print(f'Channel {channel_name} not found')
+        return
+    channel_raw = raw.copy().pick_channels([channel_name])
+    channel_raw.load_data()
+    only_scalp_times = flat_features[only_scalp_indexes][:, TIMESTAMP_INDEX]
+    only_scalp_times = only_scalp_times.reshape(-1, 1).astype(int)
+    create_TFR_plot(subject, channel_raw, only_scalp_times, channel_name, 'detected by scalp model', show)
+
+    only_inracranial_times = flat_features[only_inracranial_indexes][:, TIMESTAMP_INDEX]
+    only_inracranial_times = only_inracranial_times.reshape(-1, 1).astype(int)
+    create_TFR_plot(subject, channel_raw, only_inracranial_times, channel_name, 'not detected by scalp model', show)

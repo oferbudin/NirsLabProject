@@ -230,7 +230,9 @@ class BipolarModel(Model):
             if i + 1 < len(channels):
                 next_chan = channels[i + 1]
                 # check that its the same contact
-                if next_chan[:-1] == chan[:-1]:
+                ch1, _ = utils.extract_channel_name_and_contact_number(next_chan)
+                ch2, _ = utils.extract_channel_name_and_contact_number(chan)
+                if ch1 == ch2:
                     bi_channels.append([chan, next_chan])
 
         return bi_channels
@@ -317,6 +319,8 @@ def detect_spikes_of_subject_for_specific_channels(subject: Subject, raw: mne.io
     s = time.time()
     print(f'Detecting spikes for channels {channels}')
     channels_raw = raw.copy().pick_channels(channels)
+    print(f'Loading data for channels {channels}')
+    channels_raw.load_data()
     if os.path.exists(subject.paths.subject_stimuli_path):
         channel_spikes = handle_stimuli(model, channels_raw, subject)
     else:
@@ -325,30 +329,31 @@ def detect_spikes_of_subject_for_specific_channels(subject: Subject, raw: mne.io
     return {channels[0]: channel_spikes}
 
 
-def detect_spikes_of_subject(subject: Subject, raw: mne.io.Raw, sleep_cycle_data: bool = False) -> dict:
+def detect_spikes_of_subject(subject: Subject, electrodes_raw: dict[str, mne.io.Raw], sleep_cycle_data: bool = False) -> dict:
     print(f'Detecting Intracranial spikes for subject {subject.name}')
     if not FORCE_DETECT_SPIKES and os.path.exists(subject.paths.subject_spikes_path):
         print(f'Spikes already detected for subject {subject.name}')
         return np.load(subject.paths.subject_spikes_path, allow_pickle=True)
 
-    if sleep_cycle_data:
-        start_timestamp, end_timestamp = sleeping_utils.get_timestamps_in_seconds_of_first_rem_sleep(subject)
-        raw.crop(tmin=start_timestamp, tmax=end_timestamp)
+    # if sleep_cycle_data:
+    #     start_timestamp, end_timestamp = sleeping_utils.get_timestamps_in_seconds_of_first_rem_sleep(subject)
+    #     raw.crop(tmin=start_timestamp, tmax=end_timestamp)
 
     if subject.bipolar_model:
         model = BipolarModel()
     else:
         model = UniChannelModel()
 
-    all_channels = model.get_channels(raw.ch_names)
-
     spikes = {}
-    # run on each channel and detect the spikes between stims
-    channels_spikes = Parallel(n_jobs=os.cpu_count()//2, backend='multiprocessing')(
-        delayed(detect_spikes_of_subject_for_specific_channels)(subject, raw, channels, model) for channels in all_channels
-    )
+    for _, raw in electrodes_raw.items():
+        all_channels = model.get_channels(raw.ch_names)
 
-    for d in channels_spikes:
-        spikes.update(d)
+        # run on each channel and detect the spikes between stims
+        channels_spikes = Parallel(n_jobs=min(2, os.cpu_count()//2), backend='multiprocessing')(
+            delayed(detect_spikes_of_subject_for_specific_channels)(subject, raw, channels, model) for channels in all_channels
+        )
+
+        for d in channels_spikes:
+            spikes.update(d)
     save_detection_to_npz_file(spikes, subject)
     return spikes

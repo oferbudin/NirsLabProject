@@ -1,4 +1,5 @@
 import os
+import re
 import traceback
 
 import mne
@@ -21,11 +22,11 @@ from NirsLabProject.utils import sleeping_utils
 COORDINATES = {}
 
 
-def clean_channel_name(channel_name: str) -> str:
+def clean_channel_name(subject: Subject, channel_name: str) -> str:
+    if subject.sourasky_project:
+        channel_name = foramt_sourasky_patients_channel_names(channel_name)
     # Remove the '-REF' or '-REF1' from the channel name
-    if channel_name[-2] == 'r':
-        channel_name = channel_name[:-2] + channel_name[-1]
-    return channel_name.replace('-REF1', '').replace('SEEG ', '').replace('-REF', '')
+    return channel_name.replace('-REF1', '').replace('SEEG ', '').replace('-REF', '').replace('-REF1', '')
 
 
 def get_spike_amplitude_and_length(data: np.ndarray, peak_index) -> Dict:
@@ -113,9 +114,9 @@ def create_epochs(channel_raw: mne.io.Raw, spikes: np.ndarray,
     return mne.Epochs(channel_raw, spikes, tmin=tmin, tmax=tmax)
 
 
-def clean_channels_name_in_raw_obj(raw: mne.io.Raw):
+def clean_channels_name_in_raw_obj(subject: Subject, raw: mne.io.Raw):
     print('Cleaning channels names')
-    mne.rename_channels(raw.info, {ch: clean_channel_name(ch) for ch in raw.ch_names})
+    mne.rename_channels(raw.info, {ch: clean_channel_name(subject, ch) for ch in raw.ch_names})
 
 
 # Removes the prefix of the channel name
@@ -128,7 +129,8 @@ def pick_seeg_and_eog_channels(raw: mne.io.Raw) -> mne.io.Raw:
             last_channel = i+1
             break
     seeg_channels = channels[:last_channel]
-    return raw.pick_channels(seeg_channels)
+    seeg_channels = [ch for ch in seeg_channels if len(ch) > 2 and not ch.startswith('EEG')]
+    return raw.pick_channels([ch for ch in seeg_channels if len(ch) > 2])
 
 
 # returns the channel amplitude and length of the spike as arrays
@@ -205,7 +207,7 @@ def catch_exception(func):
             return func(*args, **kwargs)
         except Exception as e:
             print(f'function {func.__name__} with args {args}, kwargs {kwargs} failed: {traceback.format_exc()}')
-            raise e
+            # raise e
     return wrapper
 
 
@@ -302,7 +304,8 @@ def remove_bad_channels(raw: mne.io.Raw):
     for i, channel_name in enumerate(channel_names):
         if 'EOG' in channel_name:
             continue
-        channel_area = channel_name[:-1]
+
+        channel_area = extract_channel_name_and_contact_number(channel_name)[0]
         if channel_area not in area_norms:
             print(f'calculating norms for electrode {channel_area}')
             area_norms[channel_area] = []
@@ -310,7 +313,7 @@ def remove_bad_channels(raw: mne.io.Raw):
             area_norms_skew[channel_area] = []
             area_norms_kurtosis[channel_area] = []
 
-        channel_index = channel_name[-1]
+        _, contact_number = extract_channel_name_and_contact_number(channel_name)
         channel_raw = raw.copy().pick_channels([channel_name])
         channel_data = channel_raw.get_data()[0]
 
@@ -326,7 +329,7 @@ def remove_bad_channels(raw: mne.io.Raw):
 
         # if the next channel is from a different area or the last channel
         # calculate the median of the norms and mark the channels that are above it
-        if i == len(channel_names) - 1 or channel_names[i + 1][-1] < channel_index:
+        if i == len(channel_names) - 1 or channel_names[i + 1][-1] < contact_number:
             for channel_area, channels in area_norms.items():
                 area_norms_stds_median = np.median(area_norms_stds[channel_area])
                 area_norms_skew_median = np.median(area_norms_skew[channel_area])
@@ -524,7 +527,10 @@ def t_test(group1: np.ndarray, group2: np.ndarray):
 
 
 def remove_subject_number_from_indexes(subject_number: int, indexes: np.ndarray) -> np.ndarray:
-    return indexes % subject_number
+    subject_number = int(float(subject_number))
+    for i in range(len(indexes)):
+        indexes[i] = float(str(indexes[i]).replace(f'{subject_number}', ''))
+    return indexes
 
 
 def calculate_sub_group_probabilities_3d(subject_number: int, group_of_indexes: np.ndarray,
@@ -553,3 +559,25 @@ def add_subject_number_to_index(subject_number: int, index: int) -> int:
     subject_number = int(subject_number)
     index = int(index)
     return int(f'{subject_number}{index}')
+
+
+def foramt_sourasky_patients_channel_names(chanel_name):
+
+    name_formatting_dict = {
+        "LAH": "LH",
+        "LSTGa": "LSTG",
+        "LEC": "LECa",
+        "LPHG": "LpPH"
+    }
+
+    channel_name = chanel_name.replace('_lfp', '')
+    name, number = extract_channel_name_and_contact_number(channel_name)
+    name = re.sub(r'\d', '', name)
+    if name in name_formatting_dict:
+        name = name_formatting_dict[name]
+    return name + number
+
+
+def extract_channel_name_and_contact_number(channel_name: str):
+    search = re.search(r'(\S*\D)(\d*)$', channel_name)
+    return search.group(1), str(int(search.group(2)))
