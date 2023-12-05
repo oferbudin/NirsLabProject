@@ -30,7 +30,6 @@ def group_spikes_by_electrodes(raw_edf: mne.io.Raw) -> Dict[str, list]:
 
 def resample_and_filter_data(subject: Subject):
     print('Reading raw data...')
-    loaded_raw = {}
     if FORCE_LOAD_EDF or not os.listdir(subject.paths.subject_resampled_data_dir_path):
         print('Reampled data not exist exists, loading...')
         raw = mne.io.read_raw_edf(subject.paths.subject_raw_edf_path)
@@ -52,20 +51,21 @@ def resample_and_filter_data(subject: Subject):
                 raw_electrode = raw_electrode.filter(0.1, 499, verbose=True, n_jobs=2)
                 print('Saving resampled data...')
                 raw_electrode.save(electrode_path, split_size='2GB', verbose=True, overwrite=True)
-                loaded_raw[electrode_name] = raw_electrode
-    else:
-        electrodes_fif = os.listdir(subject.paths.subject_resampled_data_dir_path)
-        for electrode_name in electrodes_fif:
-            electrode_name = re.search(r'_resampled_(.*)\.fif', electrode_name)
-            if electrode_name is None:
-                continue
-            electrode_name = electrode_name.group(1)
-            electrode_path = subject.paths.subject_resampled_fif_path(subject.name, electrode_name)
-            print(f'Data for electrode {electrode_name} was already resampled, reading it...')
-            channel_raw = mne.io.read_raw_fif(electrode_path)
-            utils.clean_channels_name_in_raw_obj(subject, channel_raw)
-            loaded_raw[electrode_name] = channel_raw
-            print(f'Raw data shape: {channel_raw.tmax - channel_raw.tmin} seconds, {channel_raw.ch_names} channels, {channel_raw.info["sfreq"]} Hz')
+                del raw_electrode
+
+    loaded_raw = {}
+    electrodes_fif = os.listdir(subject.paths.subject_resampled_data_dir_path)
+    for electrode_name in electrodes_fif:
+        electrode_name = re.search(r'_resampled_(.*)\.fif', electrode_name)
+        if electrode_name is None:
+            continue
+        electrode_name = electrode_name.group(1)
+        electrode_path = subject.paths.subject_resampled_fif_path(subject.name, electrode_name)
+        print(f'Data for electrode {electrode_name} was already resampled, reading it...')
+        channel_raw = mne.io.read_raw_fif(electrode_path)
+        utils.clean_channels_name_in_raw_obj(subject, channel_raw)
+        loaded_raw[electrode_name] = channel_raw
+        print(f'Raw data shape: {channel_raw.tmax - channel_raw.tmin} seconds, {channel_raw.ch_names} channels, {channel_raw.info["sfreq"]} Hz')
     return loaded_raw
 
 
