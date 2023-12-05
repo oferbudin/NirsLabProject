@@ -667,7 +667,7 @@ def create_raincloud_plot(figure_path: str, data_channels: Dict[str, np.array], 
             patch.set_alpha(0.1)
 
         # Create a list of colors for the violin plots based on the number of features you have
-        violin_colors = ['darksalmon', 'orchid', 'skyblue', 'lightgreen', 'gold']
+        violin_colors = ['darksalmon', 'orchid', 'skyblue', 'lightgreen', 'gold', 'tomato']
 
         # Violin plot data
         vp = ax.violinplot(
@@ -682,9 +682,6 @@ def create_raincloud_plot(figure_path: str, data_channels: Dict[str, np.array], 
         for idx, b in enumerate(vp['bodies']):
             # Change the color of each violin
             b.set_color(violin_colors[idx])
-
-        # Create a list of colors for the scatter plots based on the number of features you have
-        scatter_colors = ['tomato', 'darksalmon', 'orchid', 'skyblue', 'lightgreen', 'gold']
 
         if len(data_channels) <= 2:
             # Scatterplot data
@@ -720,6 +717,65 @@ def create_raincloud_plot(figure_path: str, data_channels: Dict[str, np.array], 
         bbox_inches='tight',
         dpi=300
     )
+    if show:
+        plt.show()
+
+
+def create_raincloud_plot_for_stimuli(figure_path: str, data_channels: Dict[str, np.array], feature_name: str, show: bool = False):
+    fig, ax = plt.subplots(figsize=(8, 4))
+
+    data = []
+    for key, values in data_channels.items():
+        for _, d in values.items():
+            data.append(d)
+
+    # add horizontal line at y=0
+    ax.axhline(y=0, color='dimgrey', linewidth=0.5, zorder=1)
+
+    # Boxplot data
+    bp = ax.boxplot(
+        x=data,
+        vert=True,
+        patch_artist=True,
+        zorder=2,
+    )
+
+    # change the color of the boxplots
+    box_plots_colors = ['lightseagreen', 'indianred']
+    box_plots_edges_colors = ['darkcyan', 'firebrick']
+    for idx, patch in enumerate(bp['boxes']):
+        patch.set_facecolor(box_plots_colors[idx % 2])
+        patch.set_alpha(0.8)
+        patch.set_edgecolor(box_plots_edges_colors[idx % 2])
+
+    for element in ['whiskers', 'fliers', 'medians', 'caps']:
+        plt.setp(bp[element], color='black')
+
+    # x axis ticks
+    if len(data) == len(data_channels):
+        plt.xticks(np.arange(1, len(data_channels) + 1, 1), data_channels.keys())
+    else:
+        plt.xticks(np.arange(1, 2*len(data_channels), 2) + 0.5, data_channels.keys())
+
+    # y axis ticks
+    plt.ylabel(feature_name)
+
+    # title
+    plt.title(f"{feature_name}")
+
+    # add legend
+    legend_elements = [
+        mpatches.Patch(facecolor=box_plots_colors[0], edgecolor='white', label='Stimuli'),
+        mpatches.Patch(facecolor=box_plots_colors[1], edgecolor='white', label='Control'),
+    ]
+    ax.legend(handles=legend_elements, loc='upper right')
+
+    fig.savefig(
+        fname=os.path.join(figure_path, feature_name),
+        bbox_inches='tight',
+        dpi=300
+    )
+
     if show:
         plt.show()
 
@@ -930,10 +986,10 @@ def create_eog_erp(
             filtered_indexes = flat_features[:, CHANNEL_INDEX] == channel_index
         spikes_times = flat_features[filtered_indexes][:, TIMESTAMP_INDEX]
         spikes_times = spikes_times.reshape(-1, 1).astype(int)
-        for channel_name in eog_raw.ch_names:
-            channel_raw = eog_raw.copy().pick_channels([channel_name])
+        for eog_channel_name in eog_raw.ch_names:
+            channel_raw = eog_raw.copy().pick_channels([eog_channel_name])
             channel_raw.load_data()
-            create_ERP_plot(subject, channel_raw, spikes_times, channel_name, f'spikes of - {channel_name}', show)
+            create_ERP_plot(subject, channel_raw, spikes_times, eog_channel_name, f'spikes of - {channel_name}', show)
 
 
 def create_eog_tfr(
@@ -953,10 +1009,10 @@ def create_eog_tfr(
         filtered_indexes = flat_features[:, CHANNEL_INDEX] == channel_index
     spikes_times = flat_features[filtered_indexes][:, TIMESTAMP_INDEX]
     spikes_times = spikes_times.reshape(-1, 1).astype(int)
-    for channel_name in eog_raw.ch_names:
-        channel_raw = eog_raw.copy().pick_channels([channel_name])
+    for eog_channel_name in eog_raw.ch_names:
+        channel_raw = eog_raw.copy().pick_channels([eog_channel_name])
         channel_raw.load_data()
-        create_TFR_plot(subject, channel_raw, spikes_times, channel_name, f'spikes of - {channel_name}', show)
+        create_TFR_plot(subject, channel_raw, spikes_times, eog_channel_name, f'spikes of - {channel_name}', show)
 
 
 def create_erp_of_detected_and_not_detected(

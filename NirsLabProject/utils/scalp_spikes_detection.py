@@ -181,7 +181,7 @@ def detect_spikes_of_subject(subject: Subject, raw: mne.io.Raw) -> np.ndarray:
     raw.load_data()
     raw = raw.copy()
     raw = raw.notch_filter(50 if subject.sourasky_project else 60)
-    # raw = raw.filter(0.1, 40)
+    raw = raw.filter(0.1, 40)
     feat_eog1 = get_all_feat_eog_with_chan_feat('1', subject, raw)
     feat_eog2 = get_all_feat_eog_with_chan_feat('2', subject, raw)
     all_feat = pd.concat([feat_eog1, feat_eog2.iloc[:, 2:].add_suffix('_2')], axis=1)

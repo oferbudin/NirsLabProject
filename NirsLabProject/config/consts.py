@@ -1,5 +1,6 @@
-# -------------------------------------------- RUN CONFIG -----------------------------------------------------------------
+g# -------------------------------------------- RUN CONFIG -----------------------------------------------------------------
 
+DOWNLOAD_FROM_GOOGLE_DRIVE = False
 FORCE_LOAD_EDF = False
 FORCE_DETECT_SPIKES = False
 FORCE_CALCULATE_SPIKES_FEATURES = False

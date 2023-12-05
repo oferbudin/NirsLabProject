@@ -1,5 +1,6 @@
 import os
 import time
+import traceback
 
 import numpy as np
 
@@ -9,14 +10,18 @@ from NirsLabProject.config.paths import Paths
 from NirsLabProject.config.subject import Subject
 from NirsLabProject.utils import pipeline_utils
 from NirsLabProject.utils import scalp_spikes_detection, intracranial_spikes_detection, plotting
-from NirsLabProject.utils.google_drive_download import download_subject_data_one_by_one
+from NirsLabProject.utils.google_drive_download import GoogleDriveDownloader
 
 
 def main(subject_name: str):
     subject = Subject(subject_name, True)
 
     # resamples and filters the data
-    seeg_raw, eog_raw = pipeline_utils.resample_and_filter_data(subject)
+    raw = pipeline_utils.resample_and_filter_data(subject)
+    if not raw:
+        print(f'Error in resampling and filtering the data of subject {subject_name}')
+        return
+    eog_raw = raw.pop('EOG')
 
     # detects scalp spikes if the subject is not from the detections project
     if subject.stimuli_project:
@@ -25,15 +30,16 @@ def main(subject_name: str):
         scalp_spikes_spikes_windows = scalp_spikes_detection.detect_spikes_of_subject(subject, eog_raw)
 
     # detects intracranial spikes
-    intracranial_spikes_spikes_windows = intracranial_spikes_detection.detect_spikes_of_subject(subject, seeg_raw)
+    intracranial_spikes_spikes_windows = intracranial_spikes_detection.detect_spikes_of_subject(subject, raw)
 
-    flat_features, channels_spikes_features, index_to_channel, groups = pipeline_utils.get_flat_features(subject, seeg_raw, intracranial_spikes_spikes_windows, scalp_spikes_spikes_windows)
+    flat_features, channels_spikes_features, index_to_channel_name, groups = pipeline_utils.get_flat_features(subject, raw, intracranial_spikes_spikes_windows, scalp_spikes_spikes_windows)
+    channel_name_to_index = {name: index for index, name in index_to_channel_name.items()}
 
     # creates raster plots of the intracranial spikes
-    pipeline_utils.create_raster_plots(subject, seeg_raw, channels_spikes_features, scalp_spikes_spikes_windows)
+    pipeline_utils.create_raster_plots(subject, raw, channels_spikes_features, scalp_spikes_spikes_windows)
 
     # plot the electrodes coordinates in 3D space
-    pipeline_utils.save_electrodes_coordinates(subject, seeg_raw)
+    pipeline_utils.save_electrodes_coordinates(subject, raw)
 
     # plots the spikes features histograms in 3D space
     plotting.plot_avg_spike_amplitude_by_electrode(subject, channels_spikes_features)
@@ -46,14 +52,23 @@ def main(subject_name: str):
     else:
         # plots the correlation between the scalp spikes and the intracranial spikes
         plotting.create_raincloud_plot_for_all_spikes_features(subject, flat_features)
-        plotting.plot_scalp_detection_probability_for_every_electrode_in_3d(subject, flat_features, index_to_channel)
+        plotting.plot_scalp_detection_probability_for_every_electrode_in_3d(subject, flat_features, index_to_channel_name)
+        for electrode_name in raw.keys():
+            electrode_raw = raw[electrode_name]
+            channel_name = electrode_raw.ch_names[0]
+            print(f'Creating erp and tfr plots for {electrode_name} - {channel_name}')
+            plotting.create_erp_of_detected_and_not_detected(subject, flat_features, electrode_raw, channel_name, channel_name_to_index)
+            plotting.create_tfr_of_detected_and_not_detected(subject, flat_features, electrode_raw, channel_name, channel_name_to_index)
+        plotting.create_eog_tfr(subject, flat_features, eog_raw, 'LH1', channel_name_to_index)
+        plotting.create_eog_erp(subject, flat_features, eog_raw, 'LH1', channel_name_to_index)
 
 
 # subjects_names can be a list of subjects that have files in Google Drive
 # or None to download all subjects
 # e.g. run_all_detection_project(['p1', 'p2'])
 def run_all_stimuli_project(subjects_names: list = None):
-    for p in download_subject_data_one_by_one(consts.STIM_PROJECT_GOOGLE_FRIVE_LINK, subjects_names):
+    gdd = GoogleDriveDownloader()
+    for p in gdd.download_subject_data_one_by_one(consts.GOOGLE_DRIVE_LINK, subjects_names):
         print(f'Processing {p}')
         try:
             main(p.name)
@@ -65,24 +80,24 @@ def run_all_stimuli_project(subjects_names: list = None):
 # or None to download all subjects
 # e.g. run_all_detection_project(['p1', 'p2'])
 def run_all_detection_project(subjects_names: list = None):
-    for p in download_subject_data_one_by_one(consts.DETECTION_PROJECT_GOOGLE_FRIVE_LINK, subjects_names):
+    gdd = GoogleDriveDownloader()
+    for p in gdd.download_subject_data_one_by_one(consts.DETECTION_PROJECT_GOOGLE_FRIVE_LINK, subjects_names):
         print(f'Processing {p}')
         try:
             main(p.name)
         except Exception as e:
-            print(f'Failed to process {p.name} due to {e}')
+            print(f'Failed to process {p.name} due to {traceback.format_exc()}')
 
 
 if __name__ == '__main__':
     start_time = time.time()
-
     # for p in [p.split('.')[0] for p in os.listdir(Paths.raw_data_dir_path) if p.startswith('p')]:
     #         print(f'Processing {p}')
-    #         main(p)
+    # main('p415')
 
-    run_all_stimuli_project()
+    # run_all_detection_project(['p51'])
 
-    pipeline_utils.detection_project_intersubjects_plots(True)
-    pipeline_utils.stimuli_effects()
+    # pipeline_utils.detection_project_intersubjects_plots(True)
+    pipeline_utils.stimuli_effects(control=True)
 
     print(f'Time taken: {(time.time() - start_time) / 60} minutes')

@@ -401,46 +401,62 @@ def add_flag_of_scalp_detection_to_spikes_features(flat_features: np.ndarray, sc
     return np.concatenate((flat_features, indexes), axis=1)
 
 
-def add_stimuli_flag_to_spikes_features(subject: Subject, flat_features: np.ndarray) -> np.ndarray:
+def _add_stimuli_flag_to_spikes_features(stimuli_windows, flat_features):
     flags = np.zeros((flat_features.shape[0], 1))
-    if subject.stimuli_project:
-        stimuli_windows = get_stimuli_time_windows(subject)
-        stimuli_session_start = stimuli_windows[0][0] * SR
-        stimuli_session_end = stimuli_windows[-1][1] * SR
+    stimuli_session_start = stimuli_windows[0][0] * SR
+    stimuli_session_end = stimuli_windows[-1][1] * SR
 
+    flags[
+        np.where(
+            np.logical_and(
+                stimuli_session_start < flat_features[:, TIMESTAMP_INDEX],
+                flat_features[:, TIMESTAMP_INDEX] < stimuli_session_end
+            )
+        )
+    ] = STIMULI_FLAG_STIMULI_SESSION
+
+    flags[
+        np.where(
+            flat_features[:, TIMESTAMP_INDEX] < stimuli_session_start
+        )
+    ] = STIMULI_FLAG_BEFORE_FIRST_STIMULI_SESSION
+
+    flags[
+        np.where(
+            flat_features[:, TIMESTAMP_INDEX] > stimuli_session_end
+        )
+    ] = STIMULI_FLAG_AFTER_STIMULI_SESSION
+
+    for session in stimuli_windows:
+        window_start = session[0] * SR
+        window_end = session[1] * SR
         flags[
             np.where(
                 np.logical_and(
-                    stimuli_session_start < flat_features[:, TIMESTAMP_INDEX],
-                    flat_features[:, TIMESTAMP_INDEX] < stimuli_session_end
+                    window_start < flat_features[:, TIMESTAMP_INDEX],
+                    flat_features[:, TIMESTAMP_INDEX] < window_end
                 )
             )
-        ] = STIMULI_FLAG_STIMULI_SESSION
+        ] = STIMULI_FLAG_DURING_STIMULI_BLOCK
+    return flags
 
-        flags[
-            np.where(
-                flat_features[:, TIMESTAMP_INDEX] < stimuli_session_start
-            )
-        ] = STIMULI_FLAG_BEFORE_FIRST_STIMULI_SESSION
 
-        flags[
-            np.where(
-                flat_features[:, TIMESTAMP_INDEX] > stimuli_session_end
-            )
-        ] = STIMULI_FLAG_AFTER_STIMULI_SESSION
+def add_stimuli_flag_to_spikes_features(subject: Subject, flat_features: np.ndarray) -> np.ndarray:
+    if subject.stimuli_project:
+        stimuli_windows = get_stimuli_time_windows(subject)
+        flags = _add_stimuli_flag_to_spikes_features(stimuli_windows, flat_features)
+    else:
+        flags = np.zeros((flat_features.shape[0], 1))
 
-        for session in stimuli_windows:
-            window_start = session[0] * SR
-            window_end = session[1] * SR
-            flags[
-                np.where(
-                    np.logical_and(
-                        window_start < flat_features[:, TIMESTAMP_INDEX],
-                        flat_features[:, TIMESTAMP_INDEX] < window_end
-                    )
-                )
-            ] = STIMULI_FLAG_DURING_STIMULI_BLOCK
     return np.concatenate((flat_features, flags), axis=1)
+
+
+# No validation for stimuli subject
+def add_stimuli_flag_from_another_subject_to_spikes_features(stimuli_subject: Subject,  flat_features: np.ndarray) -> np.ndarray:
+    stimuli_windows = get_stimuli_time_windows(stimuli_subject)
+    flags = _add_stimuli_flag_to_spikes_features(stimuli_windows, flat_features)
+    flat_features[:, STIMULI_FLAG_INDEX] = flags[:, 0]
+    return flat_features
 
 
 def add_sleeping_stage_flag_to_spike_features(subject: Subject, flat_features: np.ndarray) -> np.ndarray:
@@ -461,48 +477,91 @@ def add_sleeping_stage_flag_to_spike_features(subject: Subject, flat_features: n
                 )
             )
         ] = values[i]
+    print(f'Finished adding sleeping stages flags for subject {subject.p_number} - {list(flags)}')
     return np.concatenate((flat_features, flags), axis=1)
+
+
+def control_stimuli_effects(control_subject: Subject, stimuli_subject: Subject, group: bool = False):
+    # load control_subject features as the record started 30 minutes from the beginning
+    # of the first sleeping cycle
+    control_offset_from_beginning = (30 * 60) * SR
+    control_offset_from_beginning += sleeping_utils.get_sleep_start_end_indexes(control_subject)[0]
+    control_subject_features = np.load(control_subject.paths.subject_flat_features_path)
+    control_subject_features[:, TIMESTAMP_INDEX] -= control_offset_from_beginning
+    control_subject_features = control_subject_features[control_subject_features[:, TIMESTAMP_INDEX] >= 0]
+    control_subject_features = add_stimuli_flag_from_another_subject_to_spikes_features(stimuli_subject, control_subject_features)
+
+    if group:
+        group_ids = control_subject_features[:, GROUP_INDEX]
+        unique_indices = np.unique(group_ids, return_index=True)[1]
+        control_subject_features = control_subject_features[unique_indices]
+
+    return stimuli_effects(control_subject, control_subject_features)
 
 
 def stimuli_effects(subject: Subject, flat_features: np.ndarray):
     sleep_start = sleeping_utils.get_sleep_start_end_indexes(subject)
-    before_stimuli = flat_features[
-        np.where(
-            np.logical_and(
-                flat_features[:, TIMESTAMP_INDEX] > sleep_start[0],
-                flat_features[:, STIMULI_FLAG_INDEX] == STIMULI_FLAG_BEFORE_FIRST_STIMULI_SESSION
-            )
-        )
-    ]
-    stim_blocks = flat_features[
-        np.where(
-            np.logical_and(
-                flat_features[:, HYPNOGRAM_FLAG_INDEX] == HYPNOGRAM_FLAG_NREM,
-                flat_features[:, STIMULI_FLAG_INDEX] == STIMULI_FLAG_DURING_STIMULI_BLOCK
-            )
-        )
+    print(f'Control subject {subject.p_number} sleep start: {sleep_start[0] / ( 3600 * SR)} flat features shape: {flat_features.shape}')
+
+    baseline_features = flat_features[flat_features[:, STIMULI_FLAG_INDEX] == STIMULI_FLAG_BEFORE_FIRST_STIMULI_SESSION]
+    stimuli_blocks_features = flat_features[flat_features[:, STIMULI_FLAG_INDEX] == STIMULI_FLAG_DURING_STIMULI_BLOCK]
+    stimuli_session_features = flat_features[flat_features[:, STIMULI_FLAG_INDEX] == STIMULI_FLAG_STIMULI_SESSION]
+
+    start_of_stimuli_window = min(
+        stimuli_blocks_features[0, TIMESTAMP_INDEX],
+        stimuli_session_features[0, TIMESTAMP_INDEX],
+    )
+
+    end_of_stimuli_window = max(
+        stimuli_blocks_features[-1, TIMESTAMP_INDEX],
+        stimuli_session_features[-1, TIMESTAMP_INDEX],
+    )
+
+    print(f'stimuli ession times {start_of_stimuli_window / (3600 * SR)} - {end_of_stimuli_window / (3600 * SR)}')
+
+    before_stimuli = baseline_features[
+        baseline_features[:, TIMESTAMP_INDEX] > sleep_start[0],
     ]
 
-    pause_block = flat_features[
-        np.where(
-            np.logical_and(
-                flat_features[:, HYPNOGRAM_FLAG_INDEX] == HYPNOGRAM_FLAG_NREM,
-                flat_features[:, STIMULI_FLAG_INDEX] != STIMULI_FLAG_DURING_STIMULI_BLOCK,
-                flat_features[:, STIMULI_FLAG_INDEX] == STIMULI_FLAG_STIMULI_SESSION
-            )
-        )
+    # stim_blocks = stimuli_blocks_features[
+    #         stimuli_blocks_features[:, HYPNOGRAM_FLAG_INDEX] == HYPNOGRAM_FLAG_NREM,
+    # ]
+    stim_blocks = stimuli_blocks_features
+
+    # during_session = flat_features[
+    #      flat_features[:, HYPNOGRAM_FLAG_INDEX] == HYPNOGRAM_FLAG_NREM,
+    # ]
+    during_session = flat_features
+    during_session = during_session[
+        during_session[:, TIMESTAMP_INDEX] <= end_of_stimuli_window,
+    ]
+    during_session = during_session[
+        during_session[:, TIMESTAMP_INDEX] >= start_of_stimuli_window,
     ]
 
-    during_session = flat_features[
-        np.where(
-            np.logical_and(
-                flat_features[:, HYPNOGRAM_FLAG_INDEX] == HYPNOGRAM_FLAG_NREM,
-                flat_features[:, STIMULI_FLAG_INDEX] == STIMULI_FLAG_STIMULI_SESSION,
-            )
-        )
+    # pause_block = during_session[
+    #     during_session[:, HYPNOGRAM_FLAG_INDEX] == HYPNOGRAM_FLAG_NREM,
+    # ]
+    pause_block = during_session
+    pause_block = pause_block[
+        pause_block[:, STIMULI_FLAG_INDEX] != STIMULI_FLAG_DURING_STIMULI_BLOCK,
+    ]
+    pause_block = pause_block[
+        pause_block[:, STIMULI_FLAG_INDEX] != STIMULI_FLAG_DURING_STIMULI_BLOCK,
     ]
 
-    after_stimuli = flat_features[flat_features[:, STIMULI_FLAG_INDEX] == STIMULI_FLAG_AFTER_STIMULI_SESSION]
+    # after_stimuli = flat_features[
+    #     flat_features[:, HYPNOGRAM_FLAG_INDEX] == HYPNOGRAM_FLAG_NREM,
+    # ]
+    after_stimuli = flat_features[
+        flat_features[:, STIMULI_FLAG_INDEX] == STIMULI_FLAG_AFTER_STIMULI_SESSION,
+    ]
+    baseline_duration = before_stimuli[-1, TIMESTAMP_INDEX] - before_stimuli[0, TIMESTAMP_INDEX]
+
+    after_stimuli = after_stimuli[
+        after_stimuli[:, TIMESTAMP_INDEX] < (after_stimuli[:, TIMESTAMP_INDEX][0] + baseline_duration),
+    ]
+
     return before_stimuli, stim_blocks, pause_block, during_session, after_stimuli
 
 
@@ -568,6 +627,7 @@ def foramt_sourasky_patients_channel_names(chanel_name):
         "LSTGa": "LSTG",
         "LEC": "LECa",
         "LPHG": "LpPH"
+        ""
     }
 
     channel_name = chanel_name.replace('_lfp', '')
@@ -575,6 +635,7 @@ def foramt_sourasky_patients_channel_names(chanel_name):
     name = re.sub(r'\d', '', name)
     if name in name_formatting_dict:
         name = name_formatting_dict[name]
+    name = name.replace('-', '')
     return name + number
 
 
