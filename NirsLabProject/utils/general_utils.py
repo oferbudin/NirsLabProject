@@ -261,6 +261,8 @@ def calculate_coordinates(subject: Subject):
     print(f'calculating coordinates for subject {subject.p_number}')
     if subject.sourasky_project:
         return calculate_coordinates_sourasky(subject)
+    if subject.p_number in [5101, 5107]:
+        subject = Subject('p510', subject.bipolar_model)
     if os.path.exists(subject.paths.subject_electrode_name_file) and os.path.isfile(subject.paths.subject_electrode_locations):
         return read_coordinates_files(subject.paths.subject_electrode_name_file, subject.paths.subject_electrode_locations)
 
@@ -389,6 +391,8 @@ def pars_stimuli_locations_file(subject: Subject) -> List[str]:
 
 def add_flag_of_scalp_detection_to_spikes_features(flat_features: np.ndarray, scalp_spikes_spikes_windows: np.ndarray):
     indexes = np.zeros((flat_features.shape[0], 1))
+    if scalp_spikes_spikes_windows is None:
+        return np.concatenate((flat_features, indexes), axis=1)
     for spike in scalp_spikes_spikes_windows:
         window_start = spike * 1000
         match_spikes = np.where(
@@ -477,7 +481,6 @@ def add_sleeping_stage_flag_to_spike_features(subject: Subject, flat_features: n
                 )
             )
         ] = values[i]
-    print(f'Finished adding sleeping stages flags for subject {subject.p_number} - {list(flags)}')
     return np.concatenate((flat_features, flags), axis=1)
 
 
@@ -501,7 +504,6 @@ def control_stimuli_effects(control_subject: Subject, stimuli_subject: Subject, 
 
 def stimuli_effects(subject: Subject, flat_features: np.ndarray):
     sleep_start = sleeping_utils.get_sleep_start_end_indexes(subject)
-    print(f'Control subject {subject.p_number} sleep start: {sleep_start[0] / ( 3600 * SR)} flat features shape: {flat_features.shape}')
 
     baseline_features = flat_features[flat_features[:, STIMULI_FLAG_INDEX] == STIMULI_FLAG_BEFORE_FIRST_STIMULI_SESSION]
     stimuli_blocks_features = flat_features[flat_features[:, STIMULI_FLAG_INDEX] == STIMULI_FLAG_DURING_STIMULI_BLOCK]
@@ -517,21 +519,17 @@ def stimuli_effects(subject: Subject, flat_features: np.ndarray):
         stimuli_session_features[-1, TIMESTAMP_INDEX],
     )
 
-    print(f'stimuli ession times {start_of_stimuli_window / (3600 * SR)} - {end_of_stimuli_window / (3600 * SR)}')
-
     before_stimuli = baseline_features[
         baseline_features[:, TIMESTAMP_INDEX] > sleep_start[0],
     ]
 
-    # stim_blocks = stimuli_blocks_features[
-    #         stimuli_blocks_features[:, HYPNOGRAM_FLAG_INDEX] == HYPNOGRAM_FLAG_NREM,
-    # ]
-    stim_blocks = stimuli_blocks_features
+    stim_blocks = stimuli_blocks_features[
+            stimuli_blocks_features[:, HYPNOGRAM_FLAG_INDEX] == HYPNOGRAM_FLAG_NREM,
+    ]
 
-    # during_session = flat_features[
-    #      flat_features[:, HYPNOGRAM_FLAG_INDEX] == HYPNOGRAM_FLAG_NREM,
-    # ]
-    during_session = flat_features
+    during_session = flat_features[
+         flat_features[:, HYPNOGRAM_FLAG_INDEX] == HYPNOGRAM_FLAG_NREM,
+    ]
     during_session = during_session[
         during_session[:, TIMESTAMP_INDEX] <= end_of_stimuli_window,
     ]
@@ -539,10 +537,9 @@ def stimuli_effects(subject: Subject, flat_features: np.ndarray):
         during_session[:, TIMESTAMP_INDEX] >= start_of_stimuli_window,
     ]
 
-    # pause_block = during_session[
-    #     during_session[:, HYPNOGRAM_FLAG_INDEX] == HYPNOGRAM_FLAG_NREM,
-    # ]
-    pause_block = during_session
+    pause_block = during_session[
+        during_session[:, HYPNOGRAM_FLAG_INDEX] == HYPNOGRAM_FLAG_NREM,
+    ]
     pause_block = pause_block[
         pause_block[:, STIMULI_FLAG_INDEX] != STIMULI_FLAG_DURING_STIMULI_BLOCK,
     ]
@@ -550,11 +547,11 @@ def stimuli_effects(subject: Subject, flat_features: np.ndarray):
         pause_block[:, STIMULI_FLAG_INDEX] != STIMULI_FLAG_DURING_STIMULI_BLOCK,
     ]
 
-    # after_stimuli = flat_features[
-    #     flat_features[:, HYPNOGRAM_FLAG_INDEX] == HYPNOGRAM_FLAG_NREM,
-    # ]
     after_stimuli = flat_features[
-        flat_features[:, STIMULI_FLAG_INDEX] == STIMULI_FLAG_AFTER_STIMULI_SESSION,
+        flat_features[:, HYPNOGRAM_FLAG_INDEX] == HYPNOGRAM_FLAG_NREM,
+    ]
+    after_stimuli = after_stimuli[
+        after_stimuli[:, STIMULI_FLAG_INDEX] == STIMULI_FLAG_AFTER_STIMULI_SESSION,
     ]
     baseline_duration = before_stimuli[-1, TIMESTAMP_INDEX] - before_stimuli[0, TIMESTAMP_INDEX]
 

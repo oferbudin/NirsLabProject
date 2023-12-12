@@ -721,23 +721,23 @@ def create_raincloud_plot(figure_path: str, data_channels: Dict[str, np.array], 
         plt.show()
 
 
-def create_raincloud_plot_for_stimuli(figure_path: str, data_channels: Dict[str, np.array], feature_name: str, show: bool = False):
+def create_box_plot_for_stimuli(figure_path: str, data_channels: Dict[str, np.array], feature_name: str, show: bool = False):
     fig, ax = plt.subplots(figsize=(8, 4))
 
     data = []
     for key, values in data_channels.items():
         for _, d in values.items():
-            data.append(d)
+            data.append([val for val in d if not np.isnan(val)])
 
     # add horizontal line at y=0
     ax.axhline(y=0, color='dimgrey', linewidth=0.5, zorder=1)
-
     # Boxplot data
     bp = ax.boxplot(
         x=data,
         vert=True,
         patch_artist=True,
         zorder=2,
+        showfliers=False
     )
 
     # change the color of the boxplots
@@ -751,11 +751,22 @@ def create_raincloud_plot_for_stimuli(figure_path: str, data_channels: Dict[str,
     for element in ['whiskers', 'fliers', 'medians', 'caps']:
         plt.setp(bp[element], color='black')
 
+    # add al points as scatter plot next to the boxplot
+    for idx, d in enumerate(data):
+        jitter = np.random.uniform(-0.1, 0.1, size=len(d))
+        plt.scatter(
+            x=np.repeat(idx + 1, len(d)) + jitter,
+            y=d,
+            color='black',
+            alpha=0.5,
+            zorder=3
+        )
+
     # x axis ticks
     if len(data) == len(data_channels):
         plt.xticks(np.arange(1, len(data_channels) + 1, 1), data_channels.keys())
     else:
-        plt.xticks(np.arange(1, 2*len(data_channels), 2) + 0.5, data_channels.keys())
+        plt.xticks(np.arange(1, 2 * len(data_channels), 2) + 0.5, data_channels.keys())
 
     # y axis ticks
     plt.ylabel(feature_name)
@@ -764,9 +775,14 @@ def create_raincloud_plot_for_stimuli(figure_path: str, data_channels: Dict[str,
     plt.title(f"{feature_name}")
 
     # add legend
+    groups = list(list(data_channels.values())[0].keys())
     legend_elements = [
-        mpatches.Patch(facecolor=box_plots_colors[0], edgecolor='white', label='Stimuli'),
-        mpatches.Patch(facecolor=box_plots_colors[1], edgecolor='white', label='Control'),
+        mpatches.Patch(
+            facecolor=box_plots_colors[0], edgecolor='white', label=f'{groups[0].title()} - {len(data[0])}'
+        ),
+        mpatches.Patch(
+            facecolor=box_plots_colors[1], edgecolor='white', label=f'{groups[1].title()} - {len(data[1])}'
+        ),
     ]
     ax.legend(handles=legend_elements, loc='upper right')
 

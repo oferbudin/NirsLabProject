@@ -246,34 +246,129 @@ def detection_project_intersubjects_plots(sourasky: bool = False, show: bool = F
     plotting.plot_scalp_detection_probability_for_every_electrode_in_3d(subject, flat_features, index_to_channel)
 
 
-def stimuli_effects(show: bool = False, control: bool = False):
-    stimuli_subjects = [Subject(d, True) for d in os.listdir(Paths.products_data_dir_path) if d.startswith('p')]
-    stimuli_subjects = filter(lambda subj: subj.stimuli_project, stimuli_subjects)
-    stimuli_subjects = filter(lambda subj: os.path.exists(subj.paths.subject_flat_features_path), stimuli_subjects)
-    stimuli_subjects = sorted(list(stimuli_subjects), key=lambda subj: subj.p_number)
+########################################## stimuli project #############################################################
 
-    subjects = {
-        s: s for s in stimuli_subjects
+def baseline_diff(a, b):
+    res = ((b - a) / max(b, a)) * 100
+    if np.isnan(res):
+        return 0
+    return res
+
+
+def get_subjects(filters=None, sort_key=None):
+    subjects = [Subject(d, True) for d in os.listdir(Paths.products_data_dir_path) if d.startswith('p')]
+    if filters:
+        for filt in filters:
+            subjects = filter(filt, subjects)
+    if sort_key:
+        subjects = sorted(list(subjects), key=sort_key)
+    return subjects
+
+def get_stimuli_subject_blocks(subj: Subject):
+    subj_features = np.load(subj.paths.subject_flat_features_path)
+
+    group_ids = subj_features[:, GROUP_INDEX]
+    unique_indices = np.unique(group_ids, return_index=True)[1]
+    unique_group_subj_features = subj_features[unique_indices]
+
+    # g for groups - the difference is that we take a representative spike for each group
+    g_before, g_stim_block, g_pause_block, g_during_window, g_after = utils.stimuli_effects(
+        subj, unique_group_subj_features
+    )
+    before, stim_block, pause_block, during_window, after = utils.stimuli_effects(
+        subj, subj_features
+    )
+
+    return {
+        'before window': before,
+        'stim block': stim_block,
+        'pause block': pause_block,
+        'during window': during_window,
+        'after window': after,
+        'group before window': g_before,
+        'group stim block': g_stim_block,
+        'group pause block': g_pause_block,
+        'group during window': g_during_window,
+        'group after window': g_after,
     }
 
-    if control:
-        control_subjects = [Subject(d, True) for d in os.listdir(Paths.products_data_dir_path) if d.startswith('p')]
-        control_subjects = filter(lambda subj: not subj.stimuli_project, control_subjects)
-        control_subjects = filter(lambda subj: not subj.sourasky_project, control_subjects)
-        control_subjects = filter(lambda subj: subj.p_number not in [402, 416], control_subjects)
-        control_subjects = filter(lambda subj: os.path.exists(subj.paths.subject_flat_features_path), control_subjects)
-        control_subjects = sorted(list(control_subjects), key=lambda subj: subj.p_number)
 
-        if len(control_subjects) > len(stimuli_subjects):
-            control_subjects = control_subjects[:len(stimuli_subjects)]
+def get_control_subject_blocks(subj: Subject, stimuli_subjects: Subject):
+    g_before, g_stim_block, g_pause_block, g_during_window, g_after = utils.control_stimuli_effects(
+        subj, stimuli_subjects
+    )
+    before, stim_block, pause_block, during_window, after = utils.control_stimuli_effects(
+        subj, stimuli_subjects
+    )
+    return {
+        'before window': before,
+        'stim block': stim_block,
+        'pause block': pause_block,
+        'during window': during_window,
+        'after window': after,
+        'group before window': g_before,
+        'group stim block': g_stim_block,
+        'group pause block': g_pause_block,
+        'group during window': g_during_window,
+        'group after window': g_after,
+    }
 
 
-        subjects.update({
-            s: stimuli_subjects[i] for i, s in enumerate(control_subjects)
-        })
+def plot_stimuli_effect_with_control(subjects, subjects_stats, subjects_blocks, block_names, feature_id_to_title, show: bool = False, compare_to_base_line: bool = False):
+    for subj, stimuli_subjects in subjects.items():
+        data_of_blocks = subjects_blocks[subj]
 
-        print([s.p_number for s, _ in subjects.items()])
+        for feature_index in subjects_stats.keys():
+            # calculate the means for each block
+            is_group_feature = GROUP_INDEX <= feature_index <= GROUP_EVENT_SPATIAL_SPREAD_INDEX
+            prefix = 'group ' if is_group_feature else ''
+            block_means = {
+                block_name: np.mean(data_of_blocks[prefix+block_name][:, feature_index])
+                for block_name in block_names
+            }
 
+            if not (any(np.isnan(mean) for mean in block_means.values())):
+                subject_types = ['stimuli', 'control']
+                subj_type = subject_types[0] if subj == stimuli_subjects else subject_types[1]
+
+                # no need to compare to baseline for group features
+                if compare_to_base_line:
+                    _block_names = block_names[1:]
+                else:
+                    _block_names = block_names[:]
+
+                # calculate the block final values
+                for block_name in _block_names:
+                    # add the block to the stats
+                    if not subjects_stats[feature_index].get(block_name):
+                        subjects_stats[feature_index][block_name] = {
+                            subj_type: [] for subj_type in subject_types
+                        }
+
+                    # if compare_to_base_line is True, calculate the difference between the block and the baseline
+                    if compare_to_base_line:
+                        subjects_stats[feature_index][block_name][subj_type].append(
+                            baseline_diff(block_means['before window'], block_means[block_name])
+                        )
+                    else:
+                        subjects_stats[feature_index][block_name][subj_type].append(
+                            block_means[block_name]
+                        )
+
+    subject = Subject(STIMULI_PROJECT_INTERSUBJECTS_SUBJECT_NAME, True)
+    path = os.path.join(subject.paths.subject_stimuli_effects_plots_dir_path, 'control')
+    if not os.path.exists(path):
+        os.makedirs(path)
+    for feature_index, stats in subjects_stats.items():
+        plotting.create_box_plot_for_stimuli(
+            figure_path=path,
+            data_channels=subjects_stats[feature_index],
+            feature_name=('Baseline - ' if compare_to_base_line else 'Raw - ') + feature_id_to_title[feature_index],
+            show=show,
+        )
+
+
+def stimuli_effects(show: bool = False, control: bool = False, compare_to_base_line: bool = False):
     subjects_stats = {
         AMPLITUDE_INDEX: {},
         DURATION_INDEX: {},
@@ -294,72 +389,59 @@ def stimuli_effects(show: bool = False, control: bool = False):
         GROUP_EVENT_SHALLOWEST_INDEX: 'Spike Group Event Shallowest Electrode Avrage',
     }
 
+    stimuli_subjects = get_subjects(
+        filters=[
+            lambda subj: subj.stimuli_project,
+            lambda subj: os.path.exists(subj.paths.subject_flat_features_path),
+        ],
+        sort_key=lambda subj: subj.p_number,
+    )
+    subjects = {
+        s: s for s in stimuli_subjects
+    }
+
+    if control:
+        control_subjects = get_subjects(
+            filters=[
+                lambda subj: not subj.stimuli_project,
+                lambda subj: not subj.sourasky_project,
+                lambda subj: subj.p_number not in [415],
+                lambda subj: os.path.exists(subj.paths.subject_flat_features_path),
+            ],
+            sort_key=lambda subj: subj.p_number,
+        )
+
+        if len(control_subjects) > len(stimuli_subjects):
+            control_subjects = control_subjects[:len(stimuli_subjects)]
+
+        subjects.update({
+            s: stimuli_subjects[i] for i, s in enumerate(control_subjects)
+        })
+
+    subjects_blocks = {}
     for subj, stimuli_subjects in subjects.items():
         if subj == stimuli_subjects:
-            if not os.path.exists(subj.paths.subject_sleep_scoring_path):
-                continue
-
-            subj_features = np.load(subj.paths.subject_flat_features_path)
-
-            group_ids = subj_features[:, GROUP_INDEX]
-            unique_indices = np.unique(group_ids, return_index=True)[1]
-            unique_group_subj_features = subj_features[unique_indices]
-
-            # g for groups - the difference is that we take a representative spike for each group
-            g_before, g_stim_block, g_pause_block, g_during_window, g_after = utils.stimuli_effects(
-                subj, unique_group_subj_features
-            )
-            before, stim_block, pause_block, during_window, after = utils.stimuli_effects(
-                subj, subj_features
-            )
-        else:
-            if not os.path.exists(subj.paths.subject_hypnogram_path):
-                continue
-            g_before, g_stim_block, g_pause_block, g_during_window, g_after = utils.control_stimuli_effects(
-                subj, stimuli_subjects
-            )
-            before, stim_block, pause_block, during_window, after = utils.control_stimuli_effects(
-                subj, stimuli_subjects
-            )
-
-        for feature_index in subjects_stats.keys():
-            if GROUP_INDEX <= feature_index <= GROUP_EVENT_SPATIAL_SPREAD_INDEX:
-                baseline_mean = np.mean(g_before[:, feature_index])
-                stim_block_mean = np.mean(g_stim_block[:, feature_index])
-                pause_block_mean = np.mean(g_pause_block[:, feature_index])
-                during_window_mean = np.mean(g_during_window[:, feature_index])
-                after_mean = np.mean(g_after[:, feature_index])
+            if os.path.exists(subj.paths.subject_sleep_scoring_path):
+                data_of_blocks = get_stimuli_subject_blocks(subj)
             else:
-                baseline_mean = np.mean(before[:, feature_index])
-                stim_block_mean = np.mean(stim_block[:, feature_index])
-                pause_block_mean = np.mean(pause_block[:, feature_index])
-                during_window_mean = np.mean(during_window[:, feature_index])
-                after_mean = np.mean(after[:, feature_index])
+                print(f'stimuli {subj.p_number}')
+                continue
+        else:
+            print(f'control {subj.p_number} with {stimuli_subjects.p_number}')
+            if os.path.exists(subj.paths.subject_hypnogram_path):
+                data_of_blocks = get_control_subject_blocks(subj, stimuli_subjects)
+            else:
+                continue
+        subjects_blocks[subj] = data_of_blocks
 
-            baseline_diff = lambda a, b: ((b - a) / max(b, a)) * 100
-            if not (np.isnan(baseline_mean) or np.isnan(stim_block_mean) or np.isnan(during_window_mean)):
-                if not subjects_stats[feature_index].get('stim block'):
-                    subjects_stats[feature_index]['stim block'] = {'stimuli': [], 'control': []}
-                if not subjects_stats[feature_index].get('pause block'):
-                    subjects_stats[feature_index]['pause block'] = {'stimuli': [], 'control': []}
-                if not subjects_stats[feature_index].get('after block'):
-                    subjects_stats[feature_index]['after block'] = {'stimuli': [], 'control': []}
-
-                if subj == stimuli_subjects:
-                    subj_type = 'stimuli'
-                else:
-                    subj_type = 'control'
-
-                subjects_stats[feature_index]['stim block'][subj_type].append(baseline_diff(baseline_mean, stim_block_mean))
-                subjects_stats[feature_index]['pause block'][subj_type].append(baseline_diff(baseline_mean, pause_block_mean))
-                subjects_stats[feature_index]['after block'][subj_type].append(baseline_diff(baseline_mean, after_mean))
-
-    subject = Subject(STIMULI_PROJECT_INTERSUBJECTS_SUBJECT_NAME, True)
-    path = os.path.join(subject.paths.subject_stimuli_effects_plots_dir_path)
-    for feature_index, stats in subjects_stats.items():
-        plotting.create_raincloud_plot_for_stimuli(
-            figure_path=path,
-            data_channels=subjects_stats[feature_index],
-            feature_name=feature_id_to_title[feature_index],
-            show=show,
+    block_names = ['before window', 'stim block', 'pause block', 'after window']
+    if control:
+        plot_stimuli_effect_with_control(
+            subjects, subjects_stats.copy(), subjects_blocks, block_names, feature_id_to_title, show, compare_to_base_line
         )
+
+
+
+
+
+

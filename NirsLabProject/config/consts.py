@@ -32,7 +32,7 @@ MIN_AMPLITUDE_Z_SCORE = 1
 MAX_AMPLITUDE_Z_SCORE = 30
 
 # https://academic.oup.com/brain/article/146/5/1903/7024726
-SPIKES_GROUPING_WINDOW_SIZE = 100
+SPIKES_GROUPING_WINDOW_SIZE = 200
 
 # -------------------------------------------- Sleeping ----------------------------------------------------------------
 
