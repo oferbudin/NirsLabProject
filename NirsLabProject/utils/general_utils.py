@@ -484,7 +484,7 @@ def add_sleeping_stage_flag_to_spike_features(subject: Subject, flat_features: n
     return np.concatenate((flat_features, flags), axis=1)
 
 
-def control_stimuli_effects(control_subject: Subject, stimuli_subject: Subject, group: bool = False):
+def control_stimuli_effects(control_subject: Subject, stimuli_subject: Subject, group: bool = False, only_nrem: bool = True):
     # load control_subject features as the record started 30 minutes from the beginning
     # of the first sleeping cycle
     control_offset_from_beginning = (30 * 60) * SR
@@ -499,10 +499,10 @@ def control_stimuli_effects(control_subject: Subject, stimuli_subject: Subject, 
         unique_indices = np.unique(group_ids, return_index=True)[1]
         control_subject_features = control_subject_features[unique_indices]
 
-    return stimuli_effects(control_subject, control_subject_features)
+    return stimuli_effects(control_subject, control_subject_features, only_nrem)
 
 
-def stimuli_effects(subject: Subject, flat_features: np.ndarray):
+def stimuli_effects(subject: Subject, flat_features: np.ndarray, only_nrem: bool = True):
     sleep_start = sleeping_utils.get_sleep_start_end_indexes(subject)
 
     baseline_features = flat_features[flat_features[:, STIMULI_FLAG_INDEX] == STIMULI_FLAG_BEFORE_FIRST_STIMULI_SESSION]
@@ -519,17 +519,32 @@ def stimuli_effects(subject: Subject, flat_features: np.ndarray):
         stimuli_session_features[-1, TIMESTAMP_INDEX],
     )
 
+    # Before Stimuli
     before_stimuli = baseline_features[
         baseline_features[:, TIMESTAMP_INDEX] > sleep_start[0],
     ]
 
-    stim_blocks = stimuli_blocks_features[
-            stimuli_blocks_features[:, HYPNOGRAM_FLAG_INDEX] == HYPNOGRAM_FLAG_NREM,
-    ]
+    if only_nrem:
+        before_stimuli = before_stimuli[
+            before_stimuli[:, HYPNOGRAM_FLAG_INDEX] == HYPNOGRAM_FLAG_NREM,
+        ]
 
-    during_session = flat_features[
-         flat_features[:, HYPNOGRAM_FLAG_INDEX] == HYPNOGRAM_FLAG_NREM,
-    ]
+    # Stimuli Block
+    if only_nrem:
+        stim_blocks = stimuli_blocks_features[
+                stimuli_blocks_features[:, HYPNOGRAM_FLAG_INDEX] == HYPNOGRAM_FLAG_NREM,
+        ]
+    else:
+        stim_blocks = stimuli_blocks_features
+
+    # During Session
+    if only_nrem:
+        during_session = flat_features[
+             flat_features[:, HYPNOGRAM_FLAG_INDEX] == HYPNOGRAM_FLAG_NREM,
+        ]
+    else:
+        during_session = flat_features
+
     during_session = during_session[
         during_session[:, TIMESTAMP_INDEX] <= end_of_stimuli_window,
     ]
@@ -537,9 +552,14 @@ def stimuli_effects(subject: Subject, flat_features: np.ndarray):
         during_session[:, TIMESTAMP_INDEX] >= start_of_stimuli_window,
     ]
 
-    pause_block = during_session[
-        during_session[:, HYPNOGRAM_FLAG_INDEX] == HYPNOGRAM_FLAG_NREM,
-    ]
+    # Pause Block
+    if only_nrem:
+        pause_block = during_session[
+            during_session[:, HYPNOGRAM_FLAG_INDEX] == HYPNOGRAM_FLAG_NREM,
+        ]
+    else:
+        pause_block = during_session
+
     pause_block = pause_block[
         pause_block[:, STIMULI_FLAG_INDEX] != STIMULI_FLAG_DURING_STIMULI_BLOCK,
     ]
@@ -547,9 +567,14 @@ def stimuli_effects(subject: Subject, flat_features: np.ndarray):
         pause_block[:, STIMULI_FLAG_INDEX] != STIMULI_FLAG_DURING_STIMULI_BLOCK,
     ]
 
-    after_stimuli = flat_features[
-        flat_features[:, HYPNOGRAM_FLAG_INDEX] == HYPNOGRAM_FLAG_NREM,
-    ]
+    # After Stimuli
+    if only_nrem:
+        after_stimuli = flat_features[
+            flat_features[:, HYPNOGRAM_FLAG_INDEX] == HYPNOGRAM_FLAG_NREM,
+        ]
+    else:
+        after_stimuli = flat_features
+
     after_stimuli = after_stimuli[
         after_stimuli[:, STIMULI_FLAG_INDEX] == STIMULI_FLAG_AFTER_STIMULI_SESSION,
     ]

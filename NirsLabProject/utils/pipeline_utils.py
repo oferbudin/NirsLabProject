@@ -264,7 +264,8 @@ def get_subjects(filters=None, sort_key=None):
         subjects = sorted(list(subjects), key=sort_key)
     return subjects
 
-def get_stimuli_subject_blocks(subj: Subject):
+
+def get_stimuli_subject_blocks(subj: Subject, only_nrem: bool = True):
     subj_features = np.load(subj.paths.subject_flat_features_path)
 
     group_ids = subj_features[:, GROUP_INDEX]
@@ -273,10 +274,10 @@ def get_stimuli_subject_blocks(subj: Subject):
 
     # g for groups - the difference is that we take a representative spike for each group
     g_before, g_stim_block, g_pause_block, g_during_window, g_after = utils.stimuli_effects(
-        subj, unique_group_subj_features
+        subj, unique_group_subj_features, only_nrem=only_nrem
     )
     before, stim_block, pause_block, during_window, after = utils.stimuli_effects(
-        subj, subj_features
+        subj, subj_features, only_nrem=only_nrem
     )
 
     return {
@@ -293,12 +294,12 @@ def get_stimuli_subject_blocks(subj: Subject):
     }
 
 
-def get_control_subject_blocks(subj: Subject, stimuli_subjects: Subject):
+def get_control_subject_blocks(subj: Subject, stimuli_subjects: Subject, only_nrem: bool = True):
     g_before, g_stim_block, g_pause_block, g_during_window, g_after = utils.control_stimuli_effects(
-        subj, stimuli_subjects
+        subj, stimuli_subjects, only_nrem=only_nrem
     )
     before, stim_block, pause_block, during_window, after = utils.control_stimuli_effects(
-        subj, stimuli_subjects
+        subj, stimuli_subjects, only_nrem=only_nrem
     )
     return {
         'before window': before,
