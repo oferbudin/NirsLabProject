@@ -6,7 +6,7 @@ from NirsLabProject.config import consts
 class Subject:
     def __init__(self, subject: str, bipolar_model: bool):
         self.name = subject
-        self.p_number = int(self.name[1:])
+        self.p_number = int(self.name[1:].replace('-', ''))
         self.bipolar_model = bipolar_model
         self.paths = Paths(subject, self.bipolar_model)
         if self.p_number >= consts.STIMULI_PROJECT_FIRST_P_NUMBER:

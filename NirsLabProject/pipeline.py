@@ -29,7 +29,7 @@ def main(subject_name: str):
     pipeline_utils.create_raster_plots(subject, seeg_raw, channels_spikes_features, scalp_spikes_spikes_windows)
 
     # plot the electrodes coordinates in 3D space
-    pipeline_utils.save_electrodes_coordinates(subject, seeg_raw)
+    # pipeline_utils.save_electrodes_coordinates(subject, seeg_raw)
 
     # plots the spikes features histograms in 3D space
     plotting.plot_avg_spike_amplitude_by_electrode(subject, channels_spikes_features)
@@ -48,11 +48,12 @@ def main(subject_name: str):
 if __name__ == '__main__':
     start_time = time.time()
 
-    patients = ['p13', 'p17', 'p18', 'p25', 'p39']
+    # patients = ['p13', 'p17', 'p18', 'p25', 'p39']
+    patients = ['P416']
     for p in patients:
         main(p)
-
-    pipeline_utils.detection_project_intersubjects_plots(True)
-    pipeline_utils.stimuli_effects()
+    # main('P487')
+    # pipeline_utils.detection_project_intersubjects_plots(True)
+    # pipeline_utils.stimuli_effects()
 
     print(f'Time taken: {(time.time() - start_time) / 60} minutes')

@@ -22,6 +22,7 @@ class Paths:
         self.subject_channel_name_to_index_path = os.path.join(self.subject_products_dir_path_by_model, 'channel_name_to_index.npy')
         self.subject_channels_spikes_features_path = os.path.join(self.subject_channels_spikes_features_dir_path, 'channels_spikes_features.npy')
         self.subject_flat_features_path = os.path.join(self.subject_channels_spikes_features_dir_path, 'flat_features.npy')
+        self.subject_groups_path = os.path.join(self.subject_channels_spikes_features_dir_path, 'groups.npy')
         self.subject_resampled_data_dir_path = os.path.join(self.subject_products_dir_path, 'resampled')
         self.subject_raster_plots_dir_path = os.path.join(self.subject_plots_dir_path, "raster")
         self.subject_raincloud_plots_dir_path = os.path.join(self.subject_plots_dir_path, "raincloud")
@@ -31,11 +32,19 @@ class Paths:
         self.subject_tfr_plots_dir_path = os.path.join(self.subject_plots_dir_path, "TFRs")
         self.subject_histogram_plots_dir_path = os.path.join(self.subject_plots_dir_path, "Histograms")
         self.subject_features_3d_plots_dir_path = os.path.join(self.subject_plots_dir_path, "Features_3D")
-        self.subject_raw_edf_path = os.path.join(self.raw_data_dir_path, f'{subject}.edf')
-        self.subject_stimuli_path = os.path.join(self.stimuli_dir_path, f'{subject}_stim_timing.csv')
+        # self.subject_raw_edf_path = os.path.join(self.raw_data_dir_path, f'{subject}.edf')
+        if 300 < int(subject[1:]) < 450:
+            self.subject_raw_edf_path = fr"C:\UCLA\P{subject[1:]}_overnightData.edf"
+            control_stim = {'396': '485', '398': '486', '406': '488', '415': '489', '416': '496'}
+            curr_stim = control_stim[subject[1:]]
+            self.subject_stimuli_path = f"D:\Maya\p{curr_stim}\p{curr_stim}_stim_timing.csv"
+        else:
+            self.subject_raw_edf_path = f"D:\Maya\p{subject[1:]}\P{subject[1:]}_fixed.edf"
+            self.subject_stimuli_path = os.path.join(self.stimuli_dir_path, f'{subject}_stim_timing.csv')
         self.subject_resampled_fif_path = os.path.join(self.subject_resampled_data_dir_path, f'{subject}_resampled.fif')
         self.subject_hypnogram_path = os.path.join(self.hypnogram_data_dir_path, f'{subject}_hypno.txt')
-        self.subject_sleep_scoring_path = os.path.join(self.hypnogram_data_dir_path, f'{subject}_sleep_scoring.m')
+        # self.subject_sleep_scoring_path = os.path.join(self.hypnogram_data_dir_path, f'{subject}_sleep_scoring.m')
+        self.subject_sleep_scoring_path = f"D:\Maya\p{subject[1:]}\p{subject[1:]}_sleep_scoring.m"
         self.subject_spikes_path = os.path.join(self.subject_spikes_dir_path, f'{subject}_spikes.npz')
         self.subject_raster_plot_path = os.path.join(self.subject_raster_plots_dir_path, f'{subject}_raster_plot.png')
         self.subject_hypno_raster_plot_path = os.path.join(self.subject_raster_plots_dir_path, f'{subject}_hypno_raster_plot.png')

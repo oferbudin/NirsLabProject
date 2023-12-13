@@ -68,5 +68,6 @@ def get_hypnogram_changes_in_miliseconds(subject: Subject):
 def get_sleep_start_end_indexes(subject: Subject):
     changing_points, values = get_hypnogram_changes_in_miliseconds(subject)
     first_rem_index = np.where(values == HYPNOGRAM_FLAG_NREM)[0][0]
-    return changing_points[first_rem_index],
+    last_wake_index = np.where(values == HYPNOGRAM_FLAG_REM_OR_WAKE)[0][-1]
+    return changing_points[first_rem_index], changing_points[last_wake_index]
 

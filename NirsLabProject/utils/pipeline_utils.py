@@ -15,6 +15,7 @@ from NirsLabProject.config.consts import *
 from NirsLabProject.config.subject import Subject
 from NirsLabProject.utils.group_spikes import group_spikes
 from NirsLabProject.utils import plotting
+from NirsLabProject.utils import sleeping_utils
 
 
 def resample_and_filter_data(subject: Subject):
@@ -136,6 +137,7 @@ def get_flat_features(subject: Subject, seeg_raw: mne.io.Raw, intracranial_spike
     flat_features = np.concatenate((flat_features, subject_id), axis=1)
 
     np.save(subject.paths.subject_flat_features_path, flat_features)
+    np.save(subject.paths.subject_groups_path, [vars(x) for x in groups.values()])
 
     return flat_features, channels_spikes_features, index_to_channel, groups
 
@@ -144,8 +146,9 @@ def create_raster_plots(subject: Subject, seeg_raw: mne.io.Raw, channels_spikes_
     # converting the timestamps to seconds
     channel_spikes = {channel_name: channel_spikes[:, TIMESTAMP_INDEX] / SR for channel_name, channel_spikes in
                       channels_spikes_features.items()}
-    eog_channels_spikes = {'EOG1': [spike for spike in scalp_spikes_windows]}
-    channel_spikes.update(eog_channels_spikes)
+    if not subject.stimuli_project:
+        eog_channels_spikes = {'EOG1': [spike for spike in scalp_spikes_windows]}
+        channel_spikes.update(eog_channels_spikes)
 
     # raster plot with hypnogram and histogram
     plotting.create_raster_plot(
@@ -206,11 +209,13 @@ def detection_project_intersubjects_plots(sourasky: bool = False, show: bool = F
 
 
 def stimuli_effects(show: bool = False):
-    subjects = [Subject(d, True) for d in os.listdir(Paths.products_data_dir_path) if d.startswith('p')]
+    # subjects = [Subject(d, True) for d in os.listdir(Paths.products_data_dir_path) if d.startswith('p')]
+    subjects = [Subject('p487', True)]
     subjects = filter(lambda subj: subj.stimuli_project, subjects)
     subjects = filter(lambda subj: os.path.exists(subj.paths.subject_flat_features_path), subjects)
 
     subject_stats = {
+        TIMESTAMP_INDEX: {},
         AMPLITUDE_INDEX: {},
         DURATION_INDEX: {},
         GROUP_EVENT_DURATION_INDEX: {},
@@ -221,6 +226,7 @@ def stimuli_effects(show: bool = False):
     }
 
     feature_id_to_title = {
+        TIMESTAMP_INDEX: 'Count',
         AMPLITUDE_INDEX: 'Spike Amplitude Average',
         DURATION_INDEX: 'Spike Width Average',
         GROUP_EVENT_DURATION_INDEX: 'Spike Group Event Duration Average',
@@ -243,6 +249,27 @@ def stimuli_effects(show: bool = False):
         # g for groups - the difference is that we take a representative spike for each group
         g_before, g_stim_block, g_pause_block, g_during_window, g_after = utils.stimuli_effects(subj, unique_group_subj_features)
         before, stim_block, pause_block, during_window, after = utils.stimuli_effects(subj, subj_features)
+
+        # Handle count feature
+        sleep_start = sleeping_utils.get_sleep_start_end_indexes(subj)[0] / 1000
+        stimuli_windows = utils.get_stimuli_time_windows(subj)
+        baseline_duration = stimuli_windows[0][0] - sleep_start
+        during_window_duration = stimuli_windows[-1][1] - stimuli_windows[0][0]
+        after_duration = sleeping_utils.get_sleep_start_end_indexes(subj)[1] / 1000 - stimuli_windows[-1][1]
+        stim_block_duration = sum([window[1] - window[0] for window in stimuli_windows])
+        pause_block_duration = sum([stimuli_windows[i + 1][0] - stimuli_windows[i][1] for i in range(len(stimuli_windows) - 1)])
+        baseline = g_before.shape[0] / baseline_duration
+        stim_block_rate = g_stim_block.shape[0] / stim_block_duration
+        pause_block_rate = g_pause_block.shape[0] / pause_block_duration
+        during_window_rate = g_during_window.shape[0] / during_window_duration
+        after_rate = g_after.shape[0] / after_duration
+        subject_stats[TIMESTAMP_INDEX][subj.name] = [
+            0,
+            100 * (baseline - stim_block_rate) / baseline,
+            100 * (baseline - pause_block_rate) / baseline,
+            100 * (baseline - during_window_rate) / baseline,
+            100 * (baseline - after_rate) / baseline,
+        ]
 
         for feature_index in subject_stats.keys():
             if GROUP_INDEX <= feature_index <= GROUP_EVENT_SPATIAL_SPREAD_INDEX:

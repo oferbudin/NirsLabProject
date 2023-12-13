@@ -344,7 +344,7 @@ def detect_spikes_of_subject(subject: Subject, raw: mne.io.Raw, sleep_cycle_data
 
     spikes = {}
     # run on each channel and detect the spikes between stims
-    channels_spikes = Parallel(n_jobs=os.cpu_count()//2, backend='multiprocessing')(
+    channels_spikes = Parallel(n_jobs=4, backend='multiprocessing')(
         delayed(detect_spikes_of_subject_for_specific_channels)(subject, raw, channels, model) for channels in all_channels
     )
 

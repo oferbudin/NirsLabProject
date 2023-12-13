@@ -6,7 +6,7 @@ FORCE_CALCULATE_SPIKES_FEATURES = False
 
 # -------------------------------------------- General -----------------------------------------------------------------
 
-STIMULI_PROJECT_FIRST_P_NUMBER = 485
+STIMULI_PROJECT_FIRST_P_NUMBER = 390
 SOURASKY_PROJECT_LAST_P_NUMBER = 300
 
 
@@ -31,7 +31,7 @@ MIN_AMPLITUDE_Z_SCORE = 1
 MAX_AMPLITUDE_Z_SCORE = 30
 
 # https://academic.oup.com/brain/article/146/5/1903/7024726
-SPIKES_GROUPING_WINDOW_SIZE = 100
+SPIKES_GROUPING_WINDOW_SIZE = 200
 
 # -------------------------------------------- Sleeping ----------------------------------------------------------------
 
