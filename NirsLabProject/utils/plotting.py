@@ -721,7 +721,7 @@ def create_raincloud_plot(figure_path: str, data_channels: Dict[str, np.array], 
         plt.show()
 
 
-def create_box_plot_for_stimuli(figure_path: str, data_channels: Dict[str, np.array], feature_name: str, show: bool = False):
+def create_box_plot_for_stimuli(figure_path: str, groups_size: list, data_channels: Dict[str, np.array], feature_name: str, show: bool = False):
     fig, ax = plt.subplots(figsize=(8, 4))
 
     data = []
@@ -778,10 +778,10 @@ def create_box_plot_for_stimuli(figure_path: str, data_channels: Dict[str, np.ar
     groups = list(list(data_channels.values())[0].keys())
     legend_elements = [
         mpatches.Patch(
-            facecolor=box_plots_colors[0], edgecolor='white', label=f'{groups[0].title()} - {len(data[0])}'
+            facecolor=box_plots_colors[0], edgecolor='white', label=f'{groups[0].title()} - {groups_size[0]}'
         ),
         mpatches.Patch(
-            facecolor=box_plots_colors[1], edgecolor='white', label=f'{groups[1].title()} - {len(data[1])}'
+            facecolor=box_plots_colors[1], edgecolor='white', label=f'{groups[1].title()} - {groups_size[1]}'
         ),
     ]
     ax.legend(handles=legend_elements, loc='upper right')
@@ -1093,3 +1093,62 @@ def create_tfr_of_detected_and_not_detected(
     only_inracranial_times = flat_features[only_inracranial_indexes][:, TIMESTAMP_INDEX]
     only_inracranial_times = only_inracranial_times.reshape(-1, 1).astype(int)
     create_TFR_plot(subject, channel_raw, only_inracranial_times, channel_name, 'not detected by scalp model', show)
+
+
+def create_erp_of_stimuli_and_pause_blocks(
+        subject: Subject, flat_features: np.ndarray, raw: mne.io.Raw, channel_name: str,
+        name_to_index: Dict[str, int], show: bool = False
+):
+    channel_index = name_to_index.get(channel_name)
+    if not channel_index:
+        print(f'Channel {channel_name} not found')
+        return
+    only_stimuli_block_indexes = np.logical_and(
+        flat_features[:, CHANNEL_INDEX] == channel_index,
+        flat_features[:, STIMULI_FLAG_INDEX] == STIMULI_FLAG_DURING_STIMULI_BLOCK
+    )
+
+    only_pause_block_indexes = np.logical_and(
+        flat_features[:, CHANNEL_INDEX] == channel_index,
+        flat_features[:, STIMULI_FLAG_INDEX] == STIMULI_FLAG_STIMULI_SESSION,
+    )
+
+    channel_raw = raw.copy().pick_channels([channel_name])
+    channel_raw.load_data()
+    only_stimuli_block_times = flat_features[only_stimuli_block_indexes][:, TIMESTAMP_INDEX]
+    only_stimuli_block_times = only_stimuli_block_times.reshape(-1, 1).astype(int)
+    create_ERP_plot(subject, channel_raw, only_stimuli_block_times, channel_name, 'stimuli block', show)
+
+    only_pause_block_times = flat_features[only_pause_block_indexes][:, TIMESTAMP_INDEX]
+    only_pause_block_times = only_pause_block_times.reshape(-1, 1).astype(int)
+    create_ERP_plot(subject, channel_raw, only_pause_block_times, channel_name, 'pause block', show)
+
+
+def create_tfr_of_stimuli_and_pause_blocks(
+        subject: Subject, flat_features: np.ndarray, raw: mne.io.Raw, channel_name: str,
+        name_to_index: Dict[str, int], show: bool = False
+):
+    channel_index = name_to_index.get(channel_name)
+    if not channel_index:
+        print(f'Channel {channel_name} not found')
+        return
+    only_stimuli_block_indexes = np.logical_and(
+        flat_features[:, CHANNEL_INDEX] == channel_index,
+        flat_features[:, STIMULI_FLAG_INDEX] == STIMULI_FLAG_DURING_STIMULI_BLOCK
+    )
+
+    only_pause_block_indexes = np.logical_and(
+        flat_features[:, CHANNEL_INDEX] == channel_index,
+        flat_features[:, STIMULI_FLAG_INDEX] == STIMULI_FLAG_STIMULI_SESSION,
+    )
+
+    channel_raw = raw.copy().pick_channels([channel_name])
+    channel_raw.load_data()
+    only_stimuli_block_times = flat_features[only_stimuli_block_indexes][:, TIMESTAMP_INDEX]
+    only_stimuli_block_times = only_stimuli_block_times.reshape(-1, 1).astype(int)
+    create_TFR_plot(subject, channel_raw, only_stimuli_block_times, channel_name, 'stimuli block', show)
+
+    only_pause_block_times = flat_features[only_pause_block_indexes][:, TIMESTAMP_INDEX]
+    only_pause_block_times = only_pause_block_times.reshape(-1, 1).astype(int)
+    create_TFR_plot(subject, channel_raw, only_pause_block_times, channel_name, 'pause block', show)
+

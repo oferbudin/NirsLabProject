@@ -8,7 +8,7 @@ import scipy.stats as sp_stats
 from joblib import Parallel, delayed
 from NirsLabProject.config.paths import Paths
 
-from NirsLabProject.utils import general_utils as utils
+from NirsLabProject.utils import general_utils as utils, sleeping_utils
 from NirsLabProject.config.consts import *
 
 from NirsLabProject.utils import general_utils as utils
@@ -45,6 +45,8 @@ def resample_and_filter_data(subject: Subject):
                 if raw_electrode.info['sfreq'] != SR:
                     print(f'Resampling data, it might take some time... (around {len(raw_electrode.ch_names) * 5 // 60} minutes)')
                     raw_electrode = raw_electrode.resample(SR, verbose=True, n_jobs=2)
+                else:
+                    raw_electrode.load_data()
                 print('applying notch filter...')
                 raw_electrode = raw_electrode.notch_filter(50 if subject.sourasky_project else 60, n_jobs=2, verbose=True)
                 print('applying band pass filter...')
@@ -250,8 +252,6 @@ def detection_project_intersubjects_plots(sourasky: bool = False, show: bool = F
 
 def baseline_diff(a, b):
     res = ((b - a) / max(b, a)) * 100
-    if np.isnan(res):
-        return 0
     return res
 
 
@@ -263,6 +263,19 @@ def get_subjects(filters=None, sort_key=None):
     if sort_key:
         subjects = sorted(list(subjects), key=sort_key)
     return subjects
+
+
+def get_blocks_duration(subj: Subject):
+    sleep_start = sleeping_utils.get_sleep_start_end_indexes(subj)[0] / 1000
+    stimuli_windows = utils.get_stimuli_time_windows(subj)
+    baseline_duration = stimuli_windows[0][0] - sleep_start
+    during_window_duration = stimuli_windows[-1][1] - stimuli_windows[0][0]
+    after_duration = baseline_duration
+    stim_block_duration = sum([window[1] - window[0] for window in stimuli_windows])
+    pause_block_duration = sum(
+        [stimuli_windows[i + 1][0] - stimuli_windows[i][1] for i in range(len(stimuli_windows) - 1)])
+
+    return baseline_duration, stim_block_duration, pause_block_duration, during_window_duration, after_duration
 
 
 def get_stimuli_subject_blocks(subj: Subject, only_nrem: bool = True):
@@ -315,8 +328,17 @@ def get_control_subject_blocks(subj: Subject, stimuli_subjects: Subject, only_nr
     }
 
 
-def plot_stimuli_effect_with_control(subjects, subjects_stats, subjects_blocks, block_names, feature_id_to_title, show: bool = False, compare_to_base_line: bool = False):
+def plot_stimuli_effect_with_control(subjects, subject_block_durations, subjects_stats, subjects_blocks, block_names, feature_id_to_title, show: bool = False, compare_to_base_line: bool = False):
+    groups_size = [0, 0]
     for subj, stimuli_subjects in subjects.items():
+        subject_types = ['stimuli', 'control']
+        subj_type = subject_types[0] if subj == stimuli_subjects else subject_types[1]
+
+        if subj_type == 'stimuli':
+            groups_size[0] += 1
+        else:
+            groups_size[1] += 1
+
         data_of_blocks = subjects_blocks[subj]
 
         for feature_index in subjects_stats.keys():
@@ -327,34 +349,45 @@ def plot_stimuli_effect_with_control(subjects, subjects_stats, subjects_blocks, 
                 block_name: np.mean(data_of_blocks[prefix+block_name][:, feature_index])
                 for block_name in block_names
             }
+            block_counts = {
+                block_name: data_of_blocks[prefix + block_name][:, feature_index].shape[0]
+                for block_name in block_names
+            }
 
-            if not (any(np.isnan(mean) for mean in block_means.values())):
-                subject_types = ['stimuli', 'control']
-                subj_type = subject_types[0] if subj == stimuli_subjects else subject_types[1]
+            # no need to compare to baseline for group features
+            if compare_to_base_line:
+                _block_names = block_names[1:]
+            else:
+                _block_names = block_names[:]
 
-                # no need to compare to baseline for group features
-                if compare_to_base_line:
-                    _block_names = block_names[1:]
+            # calculate the block final values
+            for block_name in _block_names:
+                # add the block to the stats
+                if not subjects_stats[feature_index].get(block_name):
+                    subjects_stats[feature_index][block_name] = {
+                        subj_type: [] for subj_type in subject_types
+                    }
+
+                if feature_index == TIMESTAMP_INDEX:
+                    block_data = block_counts[block_name] / subject_block_durations[stimuli_subjects][block_name]
+                    base_line_data = block_counts['before window'] / subject_block_durations[stimuli_subjects][
+                        'before window']
                 else:
-                    _block_names = block_names[:]
+                    block_data = block_means[block_name]
+                    base_line_data = block_means['before window']
 
-                # calculate the block final values
-                for block_name in _block_names:
-                    # add the block to the stats
-                    if not subjects_stats[feature_index].get(block_name):
-                        subjects_stats[feature_index][block_name] = {
-                            subj_type: [] for subj_type in subject_types
-                        }
+                if np.isnan(block_data):
+                    continue
 
-                    # if compare_to_base_line is True, calculate the difference between the block and the baseline
-                    if compare_to_base_line:
-                        subjects_stats[feature_index][block_name][subj_type].append(
-                            baseline_diff(block_means['before window'], block_means[block_name])
-                        )
-                    else:
-                        subjects_stats[feature_index][block_name][subj_type].append(
-                            block_means[block_name]
-                        )
+                # if compare_to_base_line is True, calculate the difference between the block and the baseline
+                if compare_to_base_line:
+                    subjects_stats[feature_index][block_name][subj_type].append(
+                        baseline_diff(base_line_data, block_data)
+                    )
+                else:
+                    subjects_stats[feature_index][block_name][subj_type].append(
+                        block_data
+                    )
 
     subject = Subject(STIMULI_PROJECT_INTERSUBJECTS_SUBJECT_NAME, True)
     path = os.path.join(subject.paths.subject_stimuli_effects_plots_dir_path, 'control')
@@ -363,6 +396,7 @@ def plot_stimuli_effect_with_control(subjects, subjects_stats, subjects_blocks, 
     for feature_index, stats in subjects_stats.items():
         plotting.create_box_plot_for_stimuli(
             figure_path=path,
+            groups_size=groups_size,
             data_channels=subjects_stats[feature_index],
             feature_name=('Baseline - ' if compare_to_base_line else 'Raw - ') + feature_id_to_title[feature_index],
             show=show,
@@ -371,6 +405,7 @@ def plot_stimuli_effect_with_control(subjects, subjects_stats, subjects_blocks, 
 
 def stimuli_effects(show: bool = False, control: bool = False, compare_to_base_line: bool = False):
     subjects_stats = {
+        TIMESTAMP_INDEX: {},
         AMPLITUDE_INDEX: {},
         DURATION_INDEX: {},
         GROUP_EVENT_DURATION_INDEX: {},
@@ -381,6 +416,7 @@ def stimuli_effects(show: bool = False, control: bool = False, compare_to_base_l
     }
 
     feature_id_to_title = {
+        TIMESTAMP_INDEX: 'Spike Rate Average',
         AMPLITUDE_INDEX: 'Spike Amplitude Average',
         DURATION_INDEX: 'Spike Width Average',
         GROUP_EVENT_DURATION_INDEX: 'Spike Group Event Duration Average',
@@ -420,7 +456,16 @@ def stimuli_effects(show: bool = False, control: bool = False, compare_to_base_l
         })
 
     subjects_blocks = {}
+    subject_block_durations = {}
     for subj, stimuli_subjects in subjects.items():
+        block_durations = get_blocks_duration(stimuli_subjects)
+        subject_block_durations[stimuli_subjects] = {
+            'before window': block_durations[0],
+            'stim block': block_durations[1],
+            'pause block': block_durations[2],
+            'after window': block_durations[4],
+        }
+
         if subj == stimuli_subjects:
             if os.path.exists(subj.paths.subject_sleep_scoring_path):
                 data_of_blocks = get_stimuli_subject_blocks(subj)
@@ -438,11 +483,15 @@ def stimuli_effects(show: bool = False, control: bool = False, compare_to_base_l
     block_names = ['before window', 'stim block', 'pause block', 'after window']
     if control:
         plot_stimuli_effect_with_control(
-            subjects, subjects_stats.copy(), subjects_blocks, block_names, feature_id_to_title, show, compare_to_base_line
+            subjects, subject_block_durations, subjects_stats.copy(), subjects_blocks, block_names, feature_id_to_title, show, compare_to_base_line
         )
 
 
-
-
+# stimuli group with blocks
+def is_group_valid(group):
+    for block_name, block_value in group.items():
+        if not np.isnan(block_value):
+            return True
+    return False
 
 

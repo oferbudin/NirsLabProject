@@ -21,7 +21,10 @@ def main(subject_name: str):
     if not raw:
         print(f'Error in resampling and filtering the data of subject {subject_name}')
         return
-    eog_raw = raw.pop('EOG')
+    if 'EOG' in raw.keys():
+        eog_raw = raw.pop('EOG')
+    else:
+        eog_raw = None
 
     # detects scalp spikes if the subject is not from the detections project
     if subject.stimuli_project:
@@ -46,7 +49,12 @@ def main(subject_name: str):
     plotting.plot_number_of_spikes_by_electrode(subject, channels_spikes_features)
 
     if subject.stimuli_project:
-        pass
+        for electrode_name in raw.keys():
+            electrode_raw = raw[electrode_name]
+            channel_name = electrode_raw.ch_names[0]
+            print(f'Creating erp and tfr plots for {electrode_name} - {channel_name}')
+            plotting.create_erp_of_stimuli_and_pause_blocks(subject, flat_features, electrode_raw, channel_name, channel_name_to_index)
+            plotting.create_tfr_of_stimuli_and_pause_blocks(subject, flat_features, electrode_raw, channel_name, channel_name_to_index)
         # plots the effects of the stimuli on the spikes features before, during and after the stimuli
         # plotting.stimuli_effects_raincloud_plots(subject, flat_features, index_to_channel)
     else:
