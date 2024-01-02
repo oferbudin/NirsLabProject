@@ -155,7 +155,7 @@ def get_flat_features(subject: Subject, seeg_raw: dict[str, mne.io.Raw], intracr
     index_to_channel = get_index_to_channel(subject, channels_spikes_features)
 
     # extracts groups features
-    groups, flat_features = group_spikes(subject, channels_spikes_features, index_to_channel)
+    groups, flat_features, all_spikes_group_focal_point_amplitude, _ = group_spikes(subject, channels_spikes_features, index_to_channel)
 
     # adds scalp spikes flag to the features
     flat_features = utils.add_flag_of_scalp_detection_to_spikes_features(flat_features, scalp_spikes_spikes_windows)
@@ -168,7 +168,11 @@ def get_flat_features(subject: Subject, seeg_raw: dict[str, mne.io.Raw], intracr
 
     # adds subject id to the features
     subject_id = np.ones((flat_features.shape[0], 1)) * subject.p_number
-    flat_features = np.concatenate((flat_features, subject_id), axis=1)
+    flat_features = np.concatenate((
+        flat_features,
+        subject_id,
+        all_spikes_group_focal_point_amplitude.reshape((-1, 1)),
+    ), axis=1)
 
     np.save(subject.paths.subject_flat_features_path, flat_features)
 
@@ -343,7 +347,8 @@ def plot_stimuli_effect_with_control(subjects, subject_block_durations, subjects
 
         for feature_index in subjects_stats.keys():
             # calculate the means for each block
-            is_group_feature = GROUP_INDEX <= feature_index <= GROUP_EVENT_SPATIAL_SPREAD_INDEX
+            is_group_feature = GROUP_INDEX <= feature_index <= GROUP_EVENT_SPATIAL_SPREAD_INDEX or feature_index in [GROUP_FOCAL_AMPLITUDE_INDEX]
+
             prefix = 'group ' if is_group_feature else ''
             block_means = {
                 block_name: np.mean(data_of_blocks[prefix+block_name][:, feature_index])
@@ -408,6 +413,7 @@ def stimuli_effects(show: bool = False, control: bool = False, compare_to_base_l
         TIMESTAMP_INDEX: {},
         AMPLITUDE_INDEX: {},
         DURATION_INDEX: {},
+        GROUP_FOCAL_AMPLITUDE_INDEX: {},
         GROUP_EVENT_DURATION_INDEX: {},
         GROUP_EVENT_SIZE_INDEX: {},
         GROUP_EVENT_SPATIAL_SPREAD_INDEX: {},
@@ -419,6 +425,7 @@ def stimuli_effects(show: bool = False, control: bool = False, compare_to_base_l
         TIMESTAMP_INDEX: 'Spike Rate Average',
         AMPLITUDE_INDEX: 'Spike Amplitude Average',
         DURATION_INDEX: 'Spike Width Average',
+        GROUP_FOCAL_AMPLITUDE_INDEX: 'Spike Group Focal Amplitude',
         GROUP_EVENT_DURATION_INDEX: 'Spike Group Event Duration Average',
         GROUP_EVENT_SIZE_INDEX: 'Spike Group Event Size Average',
         GROUP_EVENT_SPATIAL_SPREAD_INDEX: 'Spike Group Event Spatial Spread Average',

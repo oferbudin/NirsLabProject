@@ -52,9 +52,10 @@ def main(subject_name: str):
         for electrode_name in raw.keys():
             electrode_raw = raw[electrode_name]
             channel_name = electrode_raw.ch_names[0]
-            print(f'Creating erp and tfr plots for {electrode_name} - {channel_name}')
+            print(f'Creating erp, tfr and psd plots for {electrode_name} - {channel_name}')
             plotting.create_erp_of_stimuli_and_pause_blocks(subject, flat_features, electrode_raw, channel_name, channel_name_to_index)
             plotting.create_tfr_of_stimuli_and_pause_blocks(subject, flat_features, electrode_raw, channel_name, channel_name_to_index)
+            plotting.create_psd_of_stimuli_and_no_stimuli_blocks(subject, flat_features, electrode_raw, channel_name, channel_name_to_index)
         # plots the effects of the stimuli on the spikes features before, during and after the stimuli
         # plotting.stimuli_effects_raincloud_plots(subject, flat_features, index_to_channel)
     else:

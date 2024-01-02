@@ -1152,3 +1152,65 @@ def create_tfr_of_stimuli_and_pause_blocks(
     only_pause_block_times = only_pause_block_times.reshape(-1, 1).astype(int)
     create_TFR_plot(subject, channel_raw, only_pause_block_times, channel_name, 'pause block', show)
 
+
+@utils.catch_exception
+def create_psd_of_stimuli_and_no_stimuli_blocks(
+        subject: Subject, flat_features: np.ndarray, raw: mne.io.Raw, channel_name: str,
+        name_to_index: Dict[str, int], show: bool = False):
+    channel_index = name_to_index.get(channel_name, None)
+    if channel_index is None:
+        print(f'Channel {channel_name} not found')
+        return
+
+    only_stimuli_block_indexes = np.logical_and(
+        flat_features[:, CHANNEL_INDEX] == channel_index,
+        flat_features[:, STIMULI_FLAG_INDEX] == STIMULI_FLAG_DURING_STIMULI_BLOCK
+    )
+
+    without_stimuli_blocks_indexes = np.logical_and(
+        flat_features[:, CHANNEL_INDEX] == channel_index,
+        flat_features[:, STIMULI_FLAG_INDEX] != STIMULI_FLAG_DURING_STIMULI_BLOCK,
+    )
+
+    channel_raw = raw.copy().pick_channels([channel_name])
+    channel_raw.load_data()
+    only_stimuli_block_times = flat_features[only_stimuli_block_indexes][:, TIMESTAMP_INDEX]
+    only_stimuli_block_times = only_stimuli_block_times.reshape(-1, 1).astype(int)
+    stimuli_epochs = utils.create_epochs(channel_raw, only_stimuli_block_times, -1, 1)
+
+    without_stimuli_blocks_times = flat_features[without_stimuli_blocks_indexes][:, TIMESTAMP_INDEX]
+    without_stimuli_blocks_times = without_stimuli_blocks_times.reshape(-1, 1).astype(int)
+    no_stimuli_epochs = utils.create_epochs(channel_raw, without_stimuli_blocks_times, -1, 1)
+
+    fig = plt.figure(layout='constrained')
+    ax = fig.add_gridspec(top=0.75, right=0.75).subplots()
+    # plot_psd is obsolete, but the new function plot_psd_topomap is not supporting fig saving
+    stimuli_epochs.plot_psd(
+        fmin=0,
+        fmax=250,
+        picks=[channel_name],
+        ax=ax,
+        show=show,
+        spatial_colors=False
+    )
+
+    no_stimuli_epochs.plot_psd(
+        fmin=0,
+        fmax=250,
+        ax=ax,
+        show=show,
+        spatial_colors=False,
+        color='red'
+    )
+    ax.set_title(f'{subject.name} {channel_name} PSD - {get_model_name(subject)}')
+    ax.set_xlabel('Frequency (Hz)')
+    legend = [
+        mpatches.Patch(color='black', label=f'Stimuli Blocks n={only_stimuli_block_times.shape[0]}'),
+        mpatches.Patch(color='red', label=f'No Stimuli n={without_stimuli_blocks_times.shape[0]}')
+    ]
+    ax.legend(handles=legend, bbox_to_anchor=(1, 1))
+    plt.tight_layout()
+    plt.savefig(os.path.join(subject.paths.subject_psd_plots_dir_path,
+                             f'{subject.name}-{channel_name}-stimuli-blocks-vs-non.png'), dpi=1000)
+    if show:
+        plt.show()

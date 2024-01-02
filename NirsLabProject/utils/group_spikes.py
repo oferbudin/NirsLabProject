@@ -148,11 +148,13 @@ class Group:
         self.index_to_channel = index_to_channel
 
         # sorting all the timestamps with the same timestamp of the first event by amlitude
-        self.focal_channel_index = sorted(
+        self.focal_channel = sorted(
             [spike for spike in group if spike[0] == self.fist_event_timestamp],
             key=lambda x: (x[1], x[2])
-        )[-1][CHANNEL_INDEX]
+        )[-1]
+        self.focal_channel_index = self.focal_channel[CHANNEL_INDEX]
         self.focal_channel_name = index_to_channel[self.focal_channel_index]
+        self.focal_channel_amplitude = self.focal_channel[AMPLITUDE_INDEX]
 
         self.hemispheres = set()
         self.structures = set()
@@ -196,11 +198,6 @@ class Group:
                 value = polygon_area(pts)
             else:
                 value = polygon_area(pts)
-                # try:
-                #     value = scipy.spatial.ConvexHull(pts).volume
-                # except:
-                #     print('ConvexHull failed')
-                #     value = polygon_area(pts)
         if value > 2000:
             value = 2000
         return value
@@ -217,6 +214,7 @@ class Group:
 
 
 def group_spikes(subject: Subject, channels_spikes_features: Dict[str, np.ndarray], index_to_channel: Dict[int, str]):
+    group_objets = []
     print('Grouping spikes')
 
     # Merge all the spikes into one sorted array
@@ -246,10 +244,12 @@ def group_spikes(subject: Subject, channels_spikes_features: Dict[str, np.ndarra
     all_spikes_group_deepest_electrode = np.zeros(all_spikes_flat.shape[0], dtype=int)
     all_spikes_group_shallowest_electrode = np.zeros(all_spikes_flat.shape[0], dtype=int)
     all_spikes_group_group_spatial_spread = np.zeros(all_spikes_flat.shape[0], dtype=int)
+    all_spikes_group_focal_point_amplitude = np.zeros(all_spikes_flat.shape[0], dtype=float)
     # Create a group object for each group
     for group_index, group in enumerate(groups_list):
         subject_group_index = f'{subject.p_number}_{group_index}'
         group = Group(group, subject_group_index, index_to_channel)
+        group_objets.append(group)
         group_index_to_group[subject_group_index] = group
         for i in range(group.size):
             # Add the group index to the spikes features
@@ -260,6 +260,7 @@ def group_spikes(subject: Subject, channels_spikes_features: Dict[str, np.ndarra
             all_spikes_group_deepest_electrode[spike_index] = group.deepest_electrode
             all_spikes_group_shallowest_electrode[spike_index] = group.shallowest_electrode
             all_spikes_group_group_spatial_spread[spike_index] = group.group_spatial_spread
+            all_spikes_group_focal_point_amplitude[spike_index] = group.focal_channel_amplitude
             spike_index += 1
 
     # Add the group index to the spikes array
@@ -277,4 +278,4 @@ def group_spikes(subject: Subject, channels_spikes_features: Dict[str, np.ndarra
         axis=1
     )
 
-    return group_index_to_group, all_spikes_flat
+    return group_index_to_group, all_spikes_flat, all_spikes_group_focal_point_amplitude, group_objets
