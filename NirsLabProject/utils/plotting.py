@@ -776,15 +776,16 @@ def create_box_plot_for_stimuli(figure_path: str, groups_size: list, data_channe
 
     # add legend
     groups = list(list(data_channels.values())[0].keys())
-    legend_elements = [
-        mpatches.Patch(
-            facecolor=box_plots_colors[0], edgecolor='white', label=f'{groups[0].title()} - {groups_size[0]}'
-        ),
-        mpatches.Patch(
-            facecolor=box_plots_colors[1], edgecolor='white', label=f'{groups[1].title()} - {groups_size[1]}'
-        ),
-    ]
-    ax.legend(handles=legend_elements, loc='upper right')
+    if len(groups) == 2:
+        legend_elements = [
+            mpatches.Patch(
+                facecolor=box_plots_colors[0], edgecolor='white', label=f'{groups[0].title()} - {groups_size[0]}'
+            ),
+            mpatches.Patch(
+                facecolor=box_plots_colors[1], edgecolor='white', label=f'{groups[1].title()} - {groups_size[1]}'
+            ),
+        ]
+        ax.legend(handles=legend_elements, loc='upper right')
 
     fig.savefig(
         fname=os.path.join(figure_path, feature_name),
