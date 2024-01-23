@@ -484,7 +484,7 @@ def add_sleeping_stage_flag_to_spike_features(subject: Subject, flat_features: n
     return np.concatenate((flat_features, flags), axis=1)
 
 
-def control_stimuli_effects(control_subject: Subject, stimuli_subject: Subject, group: bool = False, only_nrem: bool = True):
+def control_stimuli_effects(control_subject: Subject, stimuli_subject: Subject, group: bool = False, only_nrem: bool = True, multi_chnannel_event=False):
     # load control_subject features as the record started 30 minutes from the beginning
     # of the first sleeping cycle
     control_offset_from_beginning = (30 * 60) * SR
@@ -498,6 +498,10 @@ def control_stimuli_effects(control_subject: Subject, stimuli_subject: Subject, 
         group_ids = control_subject_features[:, GROUP_INDEX]
         unique_indices = np.unique(group_ids, return_index=True)[1]
         control_subject_features = control_subject_features[unique_indices]
+        if multi_chnannel_event:
+            control_subject_features = control_subject_features[
+                control_subject_features[:, GROUP_EVENT_SIZE_INDEX] > 2
+                ]
 
     return stimuli_effects(control_subject, control_subject_features, only_nrem)
 

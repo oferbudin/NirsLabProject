@@ -85,7 +85,7 @@ def channel_processing(subject: Subject, raw: mne.io.Raw, spikes_windows: Dict[s
     channel_spikes_indexes = utils.get_spikes_peak_indexes_in_spikes_windows(filtered_channel_data, channel_spikes_windows)
     if channel_spikes_indexes is None:
         return None
-    amplitudes, lengths = utils.extract_spikes_peaks_features(filtered_channel_data, channel_spikes_indexes)
+    amplitudes, lengths, angles = utils.extract_spikes_peaks_features(filtered_channel_data, channel_spikes_indexes)
 
     features = [None] * NUM_OF_FEATURES
     features[TIMESTAMP_INDEX] = channel_spikes_indexes
@@ -297,6 +297,12 @@ def get_stimuli_subject_blocks(subj: Subject, only_nrem: bool = True):
         subj, subj_features, only_nrem=only_nrem
     )
 
+    unique_group_subj_features_big_events = unique_group_subj_features[
+        unique_group_subj_features[:, GROUP_EVENT_SIZE_INDEX] > 2
+        ]
+    g_before_big_events, g_stim_block_big_events, g_pause_block_big_events, g_during_window_big_events, g_after_big_events = utils.stimuli_effects(
+        subj, unique_group_subj_features_big_events, only_nrem=only_nrem)
+
     return {
         'before window': before,
         'stim block': stim_block,
@@ -308,12 +314,20 @@ def get_stimuli_subject_blocks(subj: Subject, only_nrem: bool = True):
         'group pause block': g_pause_block,
         'group during window': g_during_window,
         'group after window': g_after,
+        'group before window big events': g_before_big_events,
+        'group stim block big events': g_stim_block_big_events,
+        'group pause block big events': g_pause_block_big_events,
+        'group during window big events': g_during_window_big_events,
+        'group after window big events': g_after_big_events,
     }
 
 
 def get_control_subject_blocks(subj: Subject, stimuli_subjects: Subject, only_nrem: bool = True):
     g_before, g_stim_block, g_pause_block, g_during_window, g_after = utils.control_stimuli_effects(
-        subj, stimuli_subjects, only_nrem=only_nrem
+        subj, stimuli_subjects, only_nrem=only_nrem, group=True
+    )
+    g_before_big_events, g_stim_block_big_events, g_pause_block_big_events, g_during_window_big_events, g_after_big_events = utils.control_stimuli_effects(
+        subj, stimuli_subjects, only_nrem=only_nrem, group=True, multi_chnannel_event=True
     )
     before, stim_block, pause_block, during_window, after = utils.control_stimuli_effects(
         subj, stimuli_subjects, only_nrem=only_nrem
@@ -329,6 +343,11 @@ def get_control_subject_blocks(subj: Subject, stimuli_subjects: Subject, only_nr
         'group pause block': g_pause_block,
         'group during window': g_during_window,
         'group after window': g_after,
+        'group before window big events': g_before_big_events,
+        'group stim block big events': g_stim_block_big_events,
+        'group pause block big events': g_pause_block_big_events,
+        'group during window big events': g_during_window_big_events,
+        'group after window big events': g_after_big_events,
     }
 
 
@@ -346,16 +365,19 @@ def plot_stimuli_effect_with_control(subjects, subject_block_durations, subjects
         data_of_blocks = subjects_blocks[subj]
 
         for feature_index in subjects_stats.keys():
+            if feature_index == GROUP_EVENT_SPATIAL_SPREAD_INDEX:
+                print('here')
             # calculate the means for each block
             is_group_feature = GROUP_INDEX <= feature_index <= GROUP_EVENT_SPATIAL_SPREAD_INDEX or feature_index in [GROUP_FOCAL_AMPLITUDE_INDEX]
 
             prefix = 'group ' if is_group_feature else ''
+            suffix = ' big events' if feature_index in [GROUP_EVENT_SPATIAL_SPREAD_INDEX] else ''
             block_means = {
-                block_name: np.mean(data_of_blocks[prefix+block_name][:, feature_index])
+                block_name: np.mean(data_of_blocks[prefix+block_name+suffix][:, feature_index])
                 for block_name in block_names
             }
             block_counts = {
-                block_name: data_of_blocks[prefix + block_name][:, feature_index].shape[0]
+                block_name: data_of_blocks[prefix+block_name+suffix][:, feature_index].shape[0]
                 for block_name in block_names
             }
 
