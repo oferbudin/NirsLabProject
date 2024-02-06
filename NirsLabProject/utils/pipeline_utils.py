@@ -78,20 +78,25 @@ def channel_processing(subject: Subject, raw: mne.io.Raw, spikes_windows: Dict[s
 
     channel_raw = raw.copy().pick_channels([channel_name])
     channel_raw.load_data()
-    filtered_channel_raw = channel_raw.copy()
     filtered_channel_data = channel_raw.get_data()[0]
     filtered_channel_data = sp_stats.zscore(filtered_channel_data)
     channel_spikes_windows = spikes_windows[channel_name]
     channel_spikes_indexes = utils.get_spikes_peak_indexes_in_spikes_windows(filtered_channel_data, channel_spikes_windows)
     if channel_spikes_indexes is None:
         return None
-    amplitudes, lengths, angles = utils.extract_spikes_peaks_features(filtered_channel_data, channel_spikes_indexes)
+    amplitudes, lengths, angles, relative_amp, relative_length = utils.extract_spikes_peaks_features(filtered_channel_data, channel_spikes_indexes)
 
     features = [None] * NUM_OF_FEATURES
+    for i in range(len(features)):
+        features[i] = np.zeros((channel_spikes_indexes.shape[0], 1))
     features[TIMESTAMP_INDEX] = channel_spikes_indexes
     features[CHANNEL_INDEX] = np.full((channel_spikes_indexes.shape[0], 1), int(f'{subject.p_number}{channel_index}'))
     features[AMPLITUDE_INDEX] = amplitudes.reshape((-1, 1))
     features[DURATION_INDEX] = lengths.reshape((-1, 1))
+    features[ANGLE_INDEX] = angles.reshape((-1, 1))
+    features[RELATIVE_SPIKE_AMPLITUDE_INDEX] = relative_amp.reshape((-1, 1))
+    features[RELATIVE_SPIKE_DURATION_INDEX] = relative_length.reshape((-1, 1))
+
     x, y, z = utils.get_coordinates_of_channel(channel_name_to_coordinates, channel_name)
     features[CORD_X_INDEX] = np.full((channel_spikes_indexes.shape[0], 1), x)
     features[CORD_Y_INDEX] = np.full((channel_spikes_indexes.shape[0], 1), y)
@@ -102,11 +107,11 @@ def channel_processing(subject: Subject, raw: mne.io.Raw, spikes_windows: Dict[s
         axis=1
     )
 
-    if channel_name.endswith('1'):
-        plotting.create_PSD_plot(subject, channel_raw, channel_spikes_indexes, channel_name)
-        plotting.create_TFR_plot(subject, channel_raw, channel_spikes_indexes, channel_name)
-        plotting.create_ERP_plot(subject, filtered_channel_raw, channel_spikes_indexes, channel_name)
-        plotting.create_channel_features_histograms(subject, amplitudes, lengths, channel_name)
+    # if channel_name.endswith('1'):
+    #     plotting.create_PSD_plot(subject, channel_raw, channel_spikes_indexes, channel_name)
+    #     plotting.create_TFR_plot(subject, channel_raw, channel_spikes_indexes, channel_name)
+    #     plotting.create_ERP_plot(subject, filtered_channel_raw, channel_spikes_indexes, channel_name)
+    #     plotting.create_channel_features_histograms(subject, amplitudes, lengths, channel_name)
 
     return channel_spikes_features
 
@@ -155,7 +160,7 @@ def get_flat_features(subject: Subject, seeg_raw: dict[str, mne.io.Raw], intracr
     index_to_channel = get_index_to_channel(subject, channels_spikes_features)
 
     # extracts groups features
-    groups, flat_features, all_spikes_group_focal_point_amplitude, _ = group_spikes(subject, channels_spikes_features, index_to_channel)
+    groups, flat_features, _ = group_spikes(subject, channels_spikes_features, index_to_channel)
 
     # adds scalp spikes flag to the features
     flat_features = utils.add_flag_of_scalp_detection_to_spikes_features(flat_features, scalp_spikes_spikes_windows)
@@ -165,14 +170,6 @@ def get_flat_features(subject: Subject, seeg_raw: dict[str, mne.io.Raw], intracr
 
     # adds sleeping stage flag to the features
     flat_features = utils.add_sleeping_stage_flag_to_spike_features(subject, flat_features)
-
-    # adds subject id to the features
-    subject_id = np.ones((flat_features.shape[0], 1)) * subject.p_number
-    flat_features = np.concatenate((
-        flat_features,
-        subject_id,
-        all_spikes_group_focal_point_amplitude.reshape((-1, 1)),
-    ), axis=1)
 
     np.save(subject.paths.subject_flat_features_path, flat_features)
 
@@ -365,21 +362,26 @@ def plot_stimuli_effect_with_control(subjects, subject_block_durations, subjects
         data_of_blocks = subjects_blocks[subj]
 
         for feature_index in subjects_stats.keys():
-            if feature_index == GROUP_EVENT_SPATIAL_SPREAD_INDEX:
-                print('here')
+            if feature_index >= data_of_blocks['before window'].shape[1]:
+                print(f'no data for {feature_index} of {subj.name}')
+                continue
+
             # calculate the means for each block
             is_group_feature = GROUP_INDEX <= feature_index <= GROUP_EVENT_SPATIAL_SPREAD_INDEX or feature_index in [GROUP_FOCAL_AMPLITUDE_INDEX]
 
             prefix = 'group ' if is_group_feature else ''
             suffix = ' big events' if feature_index in [GROUP_EVENT_SPATIAL_SPREAD_INDEX] else ''
-            block_means = {
-                block_name: np.mean(data_of_blocks[prefix+block_name+suffix][:, feature_index])
-                for block_name in block_names
-            }
-            block_counts = {
-                block_name: data_of_blocks[prefix+block_name+suffix][:, feature_index].shape[0]
-                for block_name in block_names
-            }
+
+            block_means = {}
+            block_counts = {}
+            for block_name in block_names:
+                if data_of_blocks[prefix + block_name + suffix] is None:
+                    block_means[block_name] = np.NAN
+                    block_counts[block_name] = 0
+                else:
+                    _block_data = data_of_blocks[prefix+block_name+suffix]
+                    block_means[block_name] = np.mean(_block_data[:, feature_index])
+                    block_counts[block_name] = _block_data[:, feature_index].shape[0]
 
             # no need to compare to baseline for group features
             if compare_to_base_line:
@@ -435,6 +437,9 @@ def stimuli_effects(show: bool = False, control: bool = False, compare_to_base_l
         TIMESTAMP_INDEX: {},
         AMPLITUDE_INDEX: {},
         DURATION_INDEX: {},
+        ANGLE_INDEX: {},
+        RELATIVE_SPIKE_AMPLITUDE_INDEX: {},
+        RELATIVE_SPIKE_DURATION_INDEX: {},
         GROUP_FOCAL_AMPLITUDE_INDEX: {},
         GROUP_EVENT_DURATION_INDEX: {},
         GROUP_EVENT_SIZE_INDEX: {},
@@ -447,6 +452,9 @@ def stimuli_effects(show: bool = False, control: bool = False, compare_to_base_l
         TIMESTAMP_INDEX: 'Spike Rate Average',
         AMPLITUDE_INDEX: 'Spike Amplitude Average',
         DURATION_INDEX: 'Spike Width Average',
+        ANGLE_INDEX: "Spike Angle",
+        RELATIVE_SPIKE_AMPLITUDE_INDEX: 'Spike Relative Amplitude',
+        RELATIVE_SPIKE_DURATION_INDEX: 'Spike Relative Width',
         GROUP_FOCAL_AMPLITUDE_INDEX: 'Spike Group Focal Amplitude',
         GROUP_EVENT_DURATION_INDEX: 'Spike Group Event Duration Average',
         GROUP_EVENT_SIZE_INDEX: 'Spike Group Event Size Average',
