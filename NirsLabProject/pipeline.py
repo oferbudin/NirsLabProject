@@ -102,11 +102,13 @@ if __name__ == '__main__':
     start_time = time.time()
     # for p in [p.split('.')[0] for p in os.listdir(Paths.raw_data_dir_path) if p.startswith('p')]:
     #         print(f'Processing {p}')
-    # main('p415')
+    # for p in ['p485', 'p486', 'p488', 'p496', 'p499', 'p520']:
+    #     main(p)
 
     # run_all_detection_project(['p51'])
 
     # pipeline_utils.detection_project_intersubjects_plots(True)
-    pipeline_utils.stimuli_effects(control=True)
+    pipeline_utils.stimuli_effects(control=True, compare_to_base_line=True)
+    pipeline_utils.stimuli_effects(control=True, compare_to_base_line=False)
 
     print(f'Time taken: {(time.time() - start_time) / 60} minutes')

@@ -36,13 +36,16 @@ def get_spike_amplitude_and_length(data: np.ndarray, peak_index) -> Dict:
     end_frame_index = min(len(data), peak_index+spike_range_in_indexes)
 
     amplitude = data[peak_index]
+    baseline = np.mean(data[start_frame_index:peak_index])
+    relative_amplitude = amplitude - baseline
+
     # finding the closest point before the peak with half of the peak amplitude
     first_half_start = start_frame_index + np.where(data[start_frame_index:peak_index] < amplitude / 2)[0]
     if len(first_half_start) > 0:
         first_half_start = first_half_start[-1]
     else:
         # if there is no point before the peak with half of the peak amplitude, we will take the start of the window
-        return {'index': peak_index, 'amplitude': amplitude, 'length': -1}
+        return {'index': peak_index, 'amplitude': amplitude, 'length': -1, 'angle': -1, 'relative_amplitude': relative_amplitude, 'relative_length': -1}
 
     # finding the closest point after the peak with half of the peak amplitude
     second_half_end = peak_index + np.where(data[peak_index:end_frame_index] < amplitude / 2)[0]
@@ -50,9 +53,35 @@ def get_spike_amplitude_and_length(data: np.ndarray, peak_index) -> Dict:
         second_half_end = second_half_end[0]
     else:
         # if there is no point after the peak with half of the peak amplitude, we will take the end of the window
-        return {'index': peak_index, 'amplitude': amplitude, 'length': -1}
+        return {'index': peak_index, 'amplitude': amplitude, 'length': -1, 'angle': -1, 'relative_amplitude': relative_amplitude, 'relative_length': -1}
 
-    return {'index': peak_index, 'amplitude': amplitude, 'length': second_half_end - first_half_start}
+    # same process as before but with the amplitude in comparison to the baseline
+    # in this case we want the half of the peak amplitude + baseline
+    relative_first_half_start = start_frame_index + \
+                                np.where(data[start_frame_index:peak_index] < (amplitude + baseline) / 2)[0]
+    if len(relative_first_half_start) > 0:
+        relative_first_half_start = relative_first_half_start[-1]
+    else:
+        return {'index': peak_index, 'amplitude': amplitude, 'length': -1, 'angle': -1, 'relative_amplitude': relative_amplitude, 'relative_length': -1}
+
+    relative_second_half_end = peak_index + np.where(data[peak_index:end_frame_index] < (amplitude + baseline) / 2)[0]
+    if len(relative_second_half_end) > 0:
+        relative_second_half_end = relative_second_half_end[0]
+    else:
+        return {'index': peak_index, 'amplitude': amplitude, 'length': -1, 'angle': -1, 'relative_amplitude': relative_amplitude, 'relative_length': -1}
+
+    xp, yp = (spike_range_in_indexes, data[peak_index])
+    x1, y1 = (first_half_start - peak_index + spike_range_in_indexes, data[first_half_start])
+    slope_angle = np.degrees(np.arctan((yp - y1) / (xp - x1)))
+
+    return {
+        'index': peak_index,
+        'amplitude': amplitude,
+        'length': second_half_end - first_half_start,
+        'angle': slope_angle,
+        'relative_amplitude': relative_amplitude,
+        'relative_length': relative_second_half_end - relative_first_half_start,
+    }
 
 
 # returns the data of the spike in the range of SPIKE_RANGE_SECONDS seconds before and after the spike_window_timestamp
@@ -72,14 +101,14 @@ def get_spike_amplitude_index(channel_data: np.ndarray, spike_window_timestamp: 
     peaks, _ = find_peaks(wide_spike_window_data)
     spikes = map(lambda p: get_spike_amplitude_and_length(wide_spike_window_data, p), peaks)
     filtered_spikes = list(
-        filter(lambda x: MIN_SPIKE_LENGTH_MILLISECONDS < x['length'] <= MAX_SPIKE_LENGTH_MILLISECONDS, spikes)
+        filter(lambda x: x['length'] <= MAX_SPIKE_LENGTH_MILLISECONDS, spikes)
     )
     if not filtered_spikes:
         return -1
 
     # Find the spike with the highest amplitude
     peak = max(filtered_spikes, key=lambda x: x['amplitude'])
-    if peak['amplitude'] < MIN_AMPLITUDE_Z_SCORE:
+    if peak['amplitude'] < MIN_AMPLITUDE_Z_SCORE or peak['length'] < MIN_SPIKE_LENGTH_MILLISECONDS:
         return -1
 
     # Return the spike index in the channel data
@@ -147,8 +176,11 @@ def extract_spikes_peaks_features(channel_data: np.ndarray, spikes: np.ndarray) 
     features_array = v_extract_features(spikes)
     peaks = np.array([d['amplitude'] for d in features_array])
     lengths = np.array([d['length'] for d in features_array])
+    angles = np.array([d['angle'] for d in features_array])
+    relative_amplitude = np.array([d['relative_amplitude'] for d in features_array])
+    relative_length = np.array([d['relative_length'] for d in features_array])
 
-    return peaks, lengths
+    return peaks, lengths, angles, relative_amplitude, relative_length
 
 
 def get_stimuli_time_windows(subject: Subject) -> List[Tuple[float, float]]:
@@ -392,7 +424,8 @@ def pars_stimuli_locations_file(subject: Subject) -> List[str]:
 def add_flag_of_scalp_detection_to_spikes_features(flat_features: np.ndarray, scalp_spikes_spikes_windows: np.ndarray):
     indexes = np.zeros((flat_features.shape[0], 1))
     if scalp_spikes_spikes_windows is None:
-        return np.concatenate((flat_features, indexes), axis=1)
+        flat_features[:, IS_IN_SCALP_INDEX] = indexes.reshape(-1)
+        return flat_features
     for spike in scalp_spikes_spikes_windows:
         window_start = spike * 1000
         match_spikes = np.where(
@@ -402,7 +435,8 @@ def add_flag_of_scalp_detection_to_spikes_features(flat_features: np.ndarray, sc
             )
         )
         indexes[match_spikes[0]] = 1
-    return np.concatenate((flat_features, indexes), axis=1)
+    flat_features[:, IS_IN_SCALP_INDEX] = indexes.reshape(-1)
+    return flat_features
 
 
 def _add_stimuli_flag_to_spikes_features(stimuli_windows, flat_features):
@@ -452,7 +486,8 @@ def add_stimuli_flag_to_spikes_features(subject: Subject, flat_features: np.ndar
     else:
         flags = np.zeros((flat_features.shape[0], 1))
 
-    return np.concatenate((flat_features, flags), axis=1)
+    flat_features[:, STIMULI_FLAG_INDEX] = flags.reshape(-1)
+    return flat_features
 
 
 # No validation for stimuli subject
@@ -470,7 +505,8 @@ def add_sleeping_stage_flag_to_spike_features(subject: Subject, flat_features: n
     except Exception as e:
         print(f'Could not get sleeping stages for subject {subject.p_number}, error: {e}')
         flags[:] = np.NAN
-        return np.concatenate((flat_features, flags), axis=1)
+        flat_features[:, HYPNOGRAM_FLAG_INDEX] = flags.reshape(-1)
+        return flat_features
     for i in range(len(changing_points) - 1):
         flags[
             # finding the indexes of the spikes that are in the current sleeping stage
@@ -481,7 +517,9 @@ def add_sleeping_stage_flag_to_spike_features(subject: Subject, flat_features: n
                 )
             )
         ] = values[i]
-    return np.concatenate((flat_features, flags), axis=1)
+
+    flat_features[:, HYPNOGRAM_FLAG_INDEX] = flags.reshape(-1)
+    return flat_features
 
 
 def control_stimuli_effects(control_subject: Subject, stimuli_subject: Subject, group: bool = False, only_nrem: bool = True, multi_chnannel_event=False):
@@ -513,15 +551,18 @@ def stimuli_effects(subject: Subject, flat_features: np.ndarray, only_nrem: bool
     stimuli_blocks_features = flat_features[flat_features[:, STIMULI_FLAG_INDEX] == STIMULI_FLAG_DURING_STIMULI_BLOCK]
     stimuli_session_features = flat_features[flat_features[:, STIMULI_FLAG_INDEX] == STIMULI_FLAG_STIMULI_SESSION]
 
-    start_of_stimuli_window = min(
-        stimuli_blocks_features[0, TIMESTAMP_INDEX],
-        stimuli_session_features[0, TIMESTAMP_INDEX],
-    )
+    try:
+        start_of_stimuli_window = min(
+            stimuli_blocks_features[0, TIMESTAMP_INDEX],
+            stimuli_session_features[0, TIMESTAMP_INDEX],
+        )
 
-    end_of_stimuli_window = max(
-        stimuli_blocks_features[-1, TIMESTAMP_INDEX],
-        stimuli_session_features[-1, TIMESTAMP_INDEX],
-    )
+        end_of_stimuli_window = max(
+            stimuli_blocks_features[-1, TIMESTAMP_INDEX],
+            stimuli_session_features[-1, TIMESTAMP_INDEX],
+        )
+    except IndexError:
+        return None, None, None, None, None
 
     # Before Stimuli
     before_stimuli = baseline_features[

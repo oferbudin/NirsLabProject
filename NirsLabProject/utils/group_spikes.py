@@ -264,18 +264,27 @@ def group_spikes(subject: Subject, channels_spikes_features: Dict[str, np.ndarra
             spike_index += 1
 
     # Add the group index to the spikes array
-    all_spikes_flat = np.concatenate(
-        (
-            all_spikes_flat,
-            all_spikes_group_indexes.reshape((-1, 1)),
-            all_spikes_group_focal_point.reshape((-1, 1)),
-            all_spikes_group_event_duration.reshape((-1, 1)),
-            all_spikes_group_event_size.reshape((-1, 1)),
-            all_spikes_group_deepest_electrode.reshape((-1, 1)),
-            all_spikes_group_shallowest_electrode.reshape((-1, 1)),
-            all_spikes_group_group_spatial_spread.reshape((-1, 1))
-        ),
-        axis=1
-    )
+    all_spikes_flat[:, GROUP_INDEX] = all_spikes_group_indexes
+    all_spikes_flat[:, GROUP_FOCAL_INDEX] = all_spikes_group_focal_point
+    all_spikes_flat[:, GROUP_EVENT_DURATION_INDEX] = all_spikes_group_event_duration
+    all_spikes_flat[:, GROUP_EVENT_SIZE_INDEX] = all_spikes_group_event_size
+    all_spikes_flat[:, GROUP_EVENT_DEEPEST_INDEX] = all_spikes_group_deepest_electrode
+    all_spikes_flat[:, GROUP_EVENT_SHALLOWEST_INDEX] = all_spikes_group_shallowest_electrode
+    all_spikes_flat[:, GROUP_EVENT_SPATIAL_SPREAD_INDEX] = all_spikes_group_group_spatial_spread
+    all_spikes_flat[:, GROUP_FOCAL_AMPLITUDE_INDEX] = all_spikes_group_focal_point_amplitude
 
-    return group_index_to_group, all_spikes_flat, all_spikes_group_focal_point_amplitude, group_objets
+    # all_spikes_flat = np.concatenate(
+    #     (
+    #         all_spikes_flat,
+    #         all_spikes_group_indexes.reshape((-1, 1)),
+    #         all_spikes_group_focal_point.reshape((-1, 1)),
+    #         all_spikes_group_event_duration.reshape((-1, 1)),
+    #         all_spikes_group_event_size.reshape((-1, 1)),
+    #         all_spikes_group_deepest_electrode.reshape((-1, 1)),
+    #         all_spikes_group_shallowest_electrode.reshape((-1, 1)),
+    #         all_spikes_group_group_spatial_spread.reshape((-1, 1))
+    #     ),
+    #     axis=1
+    # )
+
+    return group_index_to_group, all_spikes_flat, group_objets
