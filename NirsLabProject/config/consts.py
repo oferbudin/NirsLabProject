@@ -117,9 +117,19 @@ STIMULI_FLAG_BEFORE_FIRST_STIMULI_SESSION = 0
 STIMULI_FLAG_STIMULI_SESSION = 1  # during stimuli session that have multiple windows
 STIMULI_FLAG_DURING_STIMULI_BLOCK = 2  # during a stimuli window
 STIMULI_FLAG_AFTER_STIMULI_SESSION = 3
+STIMULI_FLAGS_NAMES = {
+    STIMULI_FLAG_BEFORE_FIRST_STIMULI_SESSION: 'before_first_stimuli_session',
+    STIMULI_FLAG_STIMULI_SESSION: 'pause_block',
+    STIMULI_FLAG_DURING_STIMULI_BLOCK: 'stimuli_block',
+    STIMULI_FLAG_AFTER_STIMULI_SESSION: 'after_last_stimuli_block'
+}
 
 HYPNOGRAM_FLAG_REM_OR_WAKE = 0
 HYPNOGRAM_FLAG_NREM = 1
+HYPNOGRAM_FLAGS_NAMES = {
+    HYPNOGRAM_FLAG_REM_OR_WAKE: 'rem/wake',
+    HYPNOGRAM_FLAG_NREM: 'nrem'
+}
 
 # ----------------------------------------------------------------------------------------------------------------------
 
