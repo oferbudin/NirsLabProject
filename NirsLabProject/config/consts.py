@@ -87,6 +87,31 @@ RELATIVE_SPIKE_DURATION_INDEX = RELATIVE_SPIKE_AMPLITUDE_INDEX+1
 
 NUM_OF_FEATURES = RELATIVE_SPIKE_DURATION_INDEX+1
 
+FEATURES_NAMES = {
+    TIMESTAMP_INDEX: 'timestamp',
+    CHANNEL_INDEX: 'channel',
+    AMPLITUDE_INDEX: 'amplitude',
+    DURATION_INDEX: 'duration',
+    CORD_X_INDEX: 'cord_x',
+    CORD_Y_INDEX: 'cord_y',
+    CORD_Z_INDEX: 'cord_z',
+    GROUP_INDEX: 'group',
+    GROUP_FOCAL_INDEX: 'group_focal',
+    GROUP_EVENT_DURATION_INDEX: 'group_event_duration',
+    GROUP_EVENT_SIZE_INDEX: 'group_event_size',
+    GROUP_EVENT_DEEPEST_INDEX: 'group_event_deepest',
+    GROUP_EVENT_SHALLOWEST_INDEX: 'group_event_shallowest',
+    GROUP_EVENT_SPATIAL_SPREAD_INDEX: 'group_event_spatial_spread',
+    IS_IN_SCALP_INDEX: 'is_in_scalp',
+    STIMULI_FLAG_INDEX: 'stimuli_flag',
+    HYPNOGRAM_FLAG_INDEX: 'hypnogram_flag',
+    SUBJECT_NUMBER: 'subject_number',
+    GROUP_FOCAL_AMPLITUDE_INDEX: 'group_focal_amplitude',
+    ANGLE_INDEX: 'angle',
+    RELATIVE_SPIKE_AMPLITUDE_INDEX: 'relative_spike_amplitude',
+    RELATIVE_SPIKE_DURATION_INDEX: 'relative_spike_duration'
+}
+
 
 STIMULI_FLAG_BEFORE_FIRST_STIMULI_SESSION = 0
 STIMULI_FLAG_STIMULI_SESSION = 1  # during stimuli session that have multiple windows
@@ -107,3 +132,5 @@ STIMULI_PROJECT_INTERSUBJECTS_SUBJECT_NAME = 's1'
 SHARED_GOOGLE_DRIVE_PATH = 'https://drive.google.com/drive/u/1/folders/15kVUjay5dT-u4yyNMsXExfvolwErD-78'
 GOOGLE_DRIVE_LINK = 'https://drive.google.com/drive/u/1/folders/1Ujjzk1WRMnNM48ttfm5VO9A_fqZ-8fyL'
 DETECTION_PROJECT_GOOGLE_FRIVE_LINK = 'https://drive.google.com/drive/u/1/folders/1cLBAXj-eKIwxsE81gjt2MUwAur5xRjrq'
+
+
