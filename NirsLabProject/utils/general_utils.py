@@ -260,6 +260,36 @@ def calculate_coordinates_sourasky(subject: Subject):
 
     return coords
 
+def calculate_coordinates_sourasky_avrage():
+    data = pd.read_csv(
+        filepath_or_buffer=Paths.sourasky_coordinates_path,
+        delimiter=','
+    )
+    coords_counter = {}
+    coords_sum = {}
+    for i, row in data.iterrows():
+        channel_name = row['Channel Name'].replace("'", "")
+        channel_name = foramt_sourasky_patients_channel_names(channel_name)
+        if channel_name not in coords_counter:
+            coords_counter[channel_name] = 0
+            coords_sum[channel_name] = [0, 0, 0]
+        coords_counter[channel_name] += 1
+        coords_sum[channel_name][0] += row['MNI_X']
+        coords_sum[channel_name][1] += row['MNI_Y']
+        coords_sum[channel_name][2] += row['MNI_Z']
+
+    coords = {}
+    for channel_name in coords_counter:
+        coords[channel_name] = (
+            coords_sum[channel_name][0] / coords_counter[channel_name],
+            coords_sum[channel_name][1] / coords_counter[channel_name],
+            coords_sum[channel_name][2] / coords_counter[channel_name]
+        )
+    
+    return coords
+    
+
+
 
 def read_coordinates_files(electrodes_name_file_path: str, electrodes_location_file_path: str):
     name_data = pd.read_csv(
@@ -289,14 +319,15 @@ def read_coordinates_files(electrodes_name_file_path: str, electrodes_location_f
     return name_to_coordinates
 
 
-def calculate_coordinates(subject: Subject):
-    print(f'calculating coordinates for subject {subject.p_number}')
-    if subject.sourasky_project:
-        return calculate_coordinates_sourasky(subject)
-    if subject.p_number in [5101, 5107]:
-        subject = Subject('p510', subject.bipolar_model)
-    if os.path.exists(subject.paths.subject_electrode_name_file) and os.path.isfile(subject.paths.subject_electrode_locations):
-        return read_coordinates_files(subject.paths.subject_electrode_name_file, subject.paths.subject_electrode_locations)
+def calculate_coordinates(subject: Subject, avarage = False):
+    if not avarage:
+        print(f'calculating coordinates for subject {subject.p_number}')
+        if subject.sourasky_project:
+            return calculate_coordinates_sourasky(subject)
+        if subject.p_number in [5101, 5107]:
+            subject = Subject('p510', subject.bipolar_model)
+        if os.path.exists(subject.paths.subject_electrode_name_file) and os.path.isfile(subject.paths.subject_electrode_locations):
+            return read_coordinates_files(subject.paths.subject_electrode_name_file, subject.paths.subject_electrode_locations)
 
     print('no coordinates file found, calculating coordinates from average coordinates files')
     _sum = {}
@@ -498,10 +529,10 @@ def add_stimuli_flag_from_another_subject_to_spikes_features(stimuli_subject: Su
     return flat_features
 
 
-def add_sleeping_stage_flag_to_spike_features(subject: Subject, flat_features: np.ndarray) -> np.ndarray:
+def add_sleeping_stage_flag_to_spike_features(subject: Subject, flat_features: np.ndarray, separate_wake_and_rem: bool = False) -> np.ndarray:
     flags = np.zeros((flat_features.shape[0], 1))
     try:
-        changing_points, values = sleeping_utils.get_hypnogram_changes_in_miliseconds(subject)
+        changing_points, values = sleeping_utils.get_hypnogram_changes_in_miliseconds(subject, separate_wake_and_rem)
     except Exception as e:
         print(f'Could not get sleeping stages for subject {subject.p_number}, error: {e}')
         flags[:] = np.NAN
@@ -517,7 +548,16 @@ def add_sleeping_stage_flag_to_spike_features(subject: Subject, flat_features: n
                 )
             )
         ] = values[i]
-
+        flags[
+            np.where(
+                flat_features[:, TIMESTAMP_INDEX] < changing_points[0]
+            )
+        ] = values[0]
+        flags[
+            np.where(
+                flat_features[:, TIMESTAMP_INDEX] > changing_points[-1]
+            )
+        ] = values[-1]
     flat_features[:, HYPNOGRAM_FLAG_INDEX] = flags.reshape(-1)
     return flat_features
 

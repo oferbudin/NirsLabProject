@@ -484,7 +484,8 @@ def plot_feature_on_electrodes(subject: Subject, features: dict, name: str, unit
             last_organ = current_organ
             marker_labels.append(current_organ)
         else:
-            marker_labels.append("")
+            marker_labels.append('')
+            # marker_labels.append(channel)
         colors.append(colors_plate[features[channel]['value']])
         cords.append(features[channel]['cords'])
 
@@ -498,7 +499,7 @@ def plot_feature_on_electrodes(subject: Subject, features: dict, name: str, unit
 
     view = plotting.view_markers(cords, colors, marker_size=marker_size, marker_labels=marker_labels)
     view.save_as_html(os.path.join(subject.paths.subject_features_3d_plots_dir_path, f'{name}.html'))
-
+    return view
 
 # Generate a color gradient between red and yellow based on the avarage spike amplitude
 # Gets a dict of channels and their spikes features

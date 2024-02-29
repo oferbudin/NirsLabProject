@@ -126,9 +126,17 @@ STIMULI_FLAGS_NAMES = {
 
 HYPNOGRAM_FLAG_REM_OR_WAKE = 0
 HYPNOGRAM_FLAG_NREM = 1
+HYPNOGRAM_FLAG_REM = 2
+HYPNOGRAM_FLAG_WAKE = 3
 HYPNOGRAM_FLAGS_NAMES = {
     HYPNOGRAM_FLAG_REM_OR_WAKE: 'rem/wake',
-    HYPNOGRAM_FLAG_NREM: 'nrem'
+    HYPNOGRAM_FLAG_NREM: 'nrem',
+}
+
+DETECTION_HYPNOGRAM_FALGS_NAMES = {
+    HYPNOGRAM_FLAG_NREM: 'nrem',
+    HYPNOGRAM_FLAG_WAKE: 'wake',
+    HYPNOGRAM_FLAG_REM: 'rem'
 }
 
 # ----------------------------------------------------------------------------------------------------------------------

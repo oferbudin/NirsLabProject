@@ -182,8 +182,9 @@ def create_raster_plots(subject: Subject, seeg_raw: dict[str, mne.io.Raw], chann
     # converting the timestamps to seconds
     channel_spikes = {channel_name: channel_spikes[:, TIMESTAMP_INDEX] / SR for channel_name, channel_spikes in
                       channels_spikes_features.items()}
-    eog_channels_spikes = {'EOG1': [spike for spike in scalp_spikes_windows]}
-    channel_spikes.update(eog_channels_spikes)
+    if scalp_spikes_windows is not None:
+        eog_channels_spikes = {'EOG1': [spike for spike in scalp_spikes_windows]}
+        channel_spikes.update(eog_channels_spikes)
 
     tmin = tmax = 0
     for channel_name, channel_raw in seeg_raw.items():
@@ -258,7 +259,7 @@ def baseline_diff(a, b):
     return res
 
 
-def get_subjects(filters=None, sort_key=None):
+def get_subjects(filters=None, sort_key=None) -> Subject:
     subjects = [Subject(d, True) for d in os.listdir(Paths.products_data_dir_path) if d.startswith('p')]
     if filters:
         for filt in filters:

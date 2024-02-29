@@ -30,18 +30,30 @@ def get_timestamps_in_seconds_of_first_rem_sleep(subject: Subject) -> Tuple[int,
     return start_timestamp, end_timestamp
 
 
-def get_hypnogram_changes_in_miliseconds(subject: Subject):
+def get_hypnogram_changes_in_miliseconds(subject: Subject, separate_wake_and_rem: bool = False) -> Tuple[np.ndarray, np.ndarray]:
     if os.path.exists(subject.paths.subject_hypnogram_path):
         hypnogram = np.loadtxt(subject.paths.subject_hypnogram_path, dtype=int)
-        hypnogram = pd.Series(hypnogram).map(
-            {
-                N1: HYPNOGRAM_FLAG_NREM,
-                N2: HYPNOGRAM_FLAG_NREM,
-                N3: HYPNOGRAM_FLAG_NREM,
-                REM: HYPNOGRAM_FLAG_REM_OR_WAKE,
-                WAKE: HYPNOGRAM_FLAG_REM_OR_WAKE
-            }
-        ).values
+        if separate_wake_and_rem:
+            hypnogram = pd.Series(hypnogram).map(
+                {
+                    N1: HYPNOGRAM_FLAG_NREM,
+                    N2: HYPNOGRAM_FLAG_NREM,
+                    N3: HYPNOGRAM_FLAG_NREM,
+                    REM: HYPNOGRAM_FLAG_REM,
+                    WAKE: HYPNOGRAM_FLAG_WAKE
+                }
+            ).values
+        else:
+            print("Using hypnogram file - not separating REM and WAKE")
+            hypnogram = pd.Series(hypnogram).map(
+                {
+                    N1: HYPNOGRAM_FLAG_NREM,
+                    N2: HYPNOGRAM_FLAG_NREM,
+                    N3: HYPNOGRAM_FLAG_NREM,
+                    REM: HYPNOGRAM_FLAG_REM_OR_WAKE,
+                    WAKE: HYPNOGRAM_FLAG_REM_OR_WAKE
+                }
+            ).values
         indices = np.where(hypnogram[:-1] != hypnogram[1:])[0] + 1
         indices = np.insert(indices, 0, 0)
         changing_points = indices * HYPNOGRAM_SAMPLES_INTERVAL_IN_SECONDS * SR  # Assuming each sample represents 30 seconds
@@ -65,8 +77,8 @@ def get_hypnogram_changes_in_miliseconds(subject: Subject):
     return changing_points, values
 
 
-def get_sleep_start_end_indexes(subject: Subject):
-    changing_points, values = get_hypnogram_changes_in_miliseconds(subject)
+def get_sleep_start_end_indexes(subject: Subject, seperate_rem_and_wake: bool = False):
+    changing_points, values = get_hypnogram_changes_in_miliseconds(subject, seperate_rem_and_wake)
     first_rem_index = np.where(values == HYPNOGRAM_FLAG_NREM)[0][0]
     return changing_points[first_rem_index],
 
