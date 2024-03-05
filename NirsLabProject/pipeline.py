@@ -13,8 +13,8 @@ from NirsLabProject.utils import scalp_spikes_detection, intracranial_spikes_det
 from NirsLabProject.utils.google_drive_download import GoogleDriveDownloader
 
 
-def main(subject_name: str):
-    subject = Subject(subject_name, True)
+def main(subject_name: str, bipolar_model: bool = True, model_name: str = ''):
+    subject = Subject(subject_name, bipolar_model, model_name)
 
     # resamples and filters the data
     raw = pipeline_utils.resample_and_filter_data(subject)
@@ -27,7 +27,8 @@ def main(subject_name: str):
         eog_raw = None
 
     # detects scalp spikes if the subject is not from the detections project
-    if subject.stimuli_project:
+    # if subject.stimuli_project:
+    if True:
         scalp_spikes_spikes_windows = np.array([])
     else:
         scalp_spikes_spikes_windows = scalp_spikes_detection.detect_spikes_of_subject(subject, eog_raw)
@@ -42,34 +43,34 @@ def main(subject_name: str):
     pipeline_utils.create_raster_plots(subject, raw, channels_spikes_features, scalp_spikes_spikes_windows)
 
     # plot the electrodes coordinates in 3D space
-    pipeline_utils.save_electrodes_coordinates(subject, raw)
+    # pipeline_utils.save_electrodes_coordinates(subject, raw)
 
     # plots the spikes features histograms in 3D space
-    plotting.plot_avg_spike_amplitude_by_electrode(subject, channels_spikes_features)
-    plotting.plot_number_of_spikes_by_electrode(subject, channels_spikes_features)
+    # plotting.plot_avg_spike_amplitude_by_electrode(subject, channels_spikes_features)
+    # plotting.plot_number_of_spikes_by_electrode(subject, channels_spikes_features)
 
-    if subject.stimuli_project:
-        for electrode_name in raw.keys():
-            electrode_raw = raw[electrode_name]
-            channel_name = electrode_raw.ch_names[0]
-            print(f'Creating erp, tfr and psd plots for {electrode_name} - {channel_name}')
-            plotting.create_erp_of_stimuli_and_pause_blocks(subject, flat_features, electrode_raw, channel_name, channel_name_to_index)
-            plotting.create_tfr_of_stimuli_and_pause_blocks(subject, flat_features, electrode_raw, channel_name, channel_name_to_index)
-            plotting.create_psd_of_stimuli_and_no_stimuli_blocks(subject, flat_features, electrode_raw, channel_name, channel_name_to_index)
-        # plots the effects of the stimuli on the spikes features before, during and after the stimuli
-        # plotting.stimuli_effects_raincloud_plots(subject, flat_features, index_to_channel)
-    else:
-        # plots the correlation between the scalp spikes and the intracranial spikes
-        plotting.create_raincloud_plot_for_all_spikes_features(subject, flat_features)
-        plotting.plot_scalp_detection_probability_for_every_electrode_in_3d(subject, flat_features, index_to_channel_name)
-        for electrode_name in raw.keys():
-            electrode_raw = raw[electrode_name]
-            channel_name = electrode_raw.ch_names[0]
-            print(f'Creating erp and tfr plots for {electrode_name} - {channel_name}')
-            plotting.create_erp_of_detected_and_not_detected(subject, flat_features, electrode_raw, channel_name, channel_name_to_index)
-            plotting.create_tfr_of_detected_and_not_detected(subject, flat_features, electrode_raw, channel_name, channel_name_to_index)
-        plotting.create_eog_tfr(subject, flat_features, eog_raw, 'LH1', channel_name_to_index)
-        plotting.create_eog_erp(subject, flat_features, eog_raw, 'LH1', channel_name_to_index)
+    # if subject.stimuli_project:
+    #     for electrode_name in raw.keys():
+    #         electrode_raw = raw[electrode_name]
+    #         channel_name = electrode_raw.ch_names[0]
+    #         print(f'Creating erp, tfr and psd plots for {electrode_name} - {channel_name}')
+    #         plotting.create_erp_of_stimuli_and_pause_blocks(subject, flat_features, electrode_raw, channel_name, channel_name_to_index)
+    #         plotting.create_tfr_of_stimuli_and_pause_blocks(subject, flat_features, electrode_raw, channel_name, channel_name_to_index)
+    #         plotting.create_psd_of_stimuli_and_no_stimuli_blocks(subject, flat_features, electrode_raw, channel_name, channel_name_to_index)
+    #     # plots the effects of the stimuli on the spikes features before, during and after the stimuli
+    #     # plotting.stimuli_effects_raincloud_plots(subject, flat_features, index_to_channel)
+    # else:
+    #     # plots the correlation between the scalp spikes and the intracranial spikes
+    #     plotting.create_raincloud_plot_for_all_spikes_features(subject, flat_features)
+    #     plotting.plot_scalp_detection_probability_for_every_electrode_in_3d(subject, flat_features, index_to_channel_name)
+    #     for electrode_name in raw.keys():
+    #         electrode_raw = raw[electrode_name]
+    #         channel_name = electrode_raw.ch_names[0]
+    #         print(f'Creating erp and tfr plots for {electrode_name} - {channel_name}')
+    #         plotting.create_erp_of_detected_and_not_detected(subject, flat_features, electrode_raw, channel_name, channel_name_to_index)
+    #         plotting.create_tfr_of_detected_and_not_detected(subject, flat_features, electrode_raw, channel_name, channel_name_to_index)
+    #     plotting.create_eog_tfr(subject, flat_features, eog_raw, 'LH1', channel_name_to_index)
+    #     plotting.create_eog_erp(subject, flat_features, eog_raw, 'LH1', channel_name_to_index)
 
 
 # subjects_names can be a list of subjects that have files in Google Drive
@@ -101,14 +102,19 @@ def run_all_detection_project(subjects_names: list = None):
 if __name__ == '__main__':
     start_time = time.time()
     # for p in [p.split('.')[0] for p in os.listdir(Paths.raw_data_dir_path) if p.startswith('p')]:
-    #         print(f'Processing {p}')
+    for p in ['p402']:
+        for model_name in os.listdir(Paths.models_dir_path):
+            if model_name == 'old' or 'f18' not in model_name:
+                continue
+            print(f'Processing {p}, model: {model_name}')
+            main(p, False, model_name)
     # for p in ['p485', 'p486', 'p488', 'p496', 'p499', 'p520']:
     #     main(p)
 
     # run_all_detection_project(['p51'])
 
     # pipeline_utils.detection_project_intersubjects_plots(True)
-    pipeline_utils.stimuli_effects(control=True, compare_to_base_line=True)
-    pipeline_utils.stimuli_effects(control=True, compare_to_base_line=False)
+    # pipeline_utils.stimuli_effects(control=True, compare_to_base_line=True)
+    # pipeline_utils.stimuli_effects(control=True, compare_to_base_line=False)
 
     print(f'Time taken: {(time.time() - start_time) / 60} minutes')

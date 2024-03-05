@@ -167,7 +167,7 @@ def extract_spikes_peaks_features(channel_data: np.ndarray, spikes: np.ndarray) 
     spikes = np.unique(spikes).flatten()
 
     if spikes.shape[0] == 0:
-        return np.array([]), np.array([])
+        return np.array([]), np.array([]), np.array([]), np.array([]), np.array([])
 
     # Vectorized feature extraction using np.vectorize
     v_extract_features = np.vectorize(partial(get_spike_amplitude_and_length, channel_data))

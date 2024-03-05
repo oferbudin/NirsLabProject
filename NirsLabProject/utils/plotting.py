@@ -157,7 +157,7 @@ def create_raster_plot(subject: Subject, tmin: float, tmax: float, spikes: Dict[
     add_histogram and add_histogram_to_fig(ax, channels_data)
 
     # set raster plot start and end time to be the same as the edf file
-    if not channels_data:
+    if not channels_data or channels_data[0].shape[0] == 0:
         channels_data[0] = np.array([tmin, tmax])
     else:
         channels_data[0][0] = tmin
@@ -452,15 +452,20 @@ def save_electrodes_position(raw: dict[str, mne.io.Raw], subject: Subject, stimu
 def generate_color_gradient(values: list) -> dict:
 
     def get_color(value, min_value, max_value):
-        # Normalize the value between 0 and 1
-        # normalized_value = 1 - (value - min_value) / (max_value - min_value)
-        normalized_value = (value - min_value) / (max_value - min_value)
+        if (max_value - min_value) == 0:
+            normalized_value = 0
+        else:
+            normalized_value = (value - min_value) / (max_value - min_value)
+
+        # Adjust saturation and value for pastel colors
+        saturation = 0.85  # Decrease to make colors more pastel
+        value = 0.85      # Decrease to make colors lighter
 
         # Interpolate the hue value between red (0) and yellow (60) in the HSL color space
         hue = 0 + normalized_value * 240
 
         # Convert HSL color to RGB color
-        return mcolors.hsv_to_rgb((hue / 360, 1, 1))
+        return mcolors.hsv_to_rgb((hue / 360, saturation, value))
 
     values = values.copy()
     values.sort()
@@ -473,6 +478,7 @@ def generate_color_gradient(values: list) -> dict:
 def plot_feature_on_electrodes(subject: Subject, features: dict, name: str, unit: str = '', float_format: str = '.1f', marker_size: float = 10):
     values = [d['value'] for ch, d in features.items()]
     colors_plate = generate_color_gradient(values)
+    plotting.plot_connectome()
 
     colors = []
     cords = []

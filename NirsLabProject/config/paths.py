@@ -48,3 +48,6 @@ class Paths:
 
     def subject_resampled_fif_path(self, subject, electrode_name):
         return os.path.join(self.subject_resampled_data_dir_path, f'{subject}_resampled_{electrode_name}.fif')
+
+    def subject_channels_spikes_features_intracranial_model(self, channel_name):
+        return os.path.join(self.subject_products_dir_path, f'{channel_name}_intracranial_features.pkl')

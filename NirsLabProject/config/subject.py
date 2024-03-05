@@ -8,11 +8,14 @@ from NirsLabProject.config.paths import Paths
 
 
 class Subject:
-    def __init__(self, subject: str, bipolar_model: bool):
+    def __init__(self, subject: str, bipolar_model: bool, model: str = ''):
         self.name = subject
         self.p_number = int(self.name[1:])
         self.bipolar_model = bipolar_model
         self.paths = Paths(subject, self.bipolar_model)
+        self.model_name = model
+        if model:
+            self.paths = self.paths = Paths(subject, model)
         if self.p_number >= consts.STIMULI_PROJECT_FIRST_P_NUMBER:
             self.stimuli_project = True
         else:
