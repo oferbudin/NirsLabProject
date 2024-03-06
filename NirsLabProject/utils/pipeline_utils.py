@@ -173,6 +173,8 @@ def get_flat_features(subject: Subject, seeg_raw: dict[str, mne.io.Raw], intracr
 
     np.save(subject.paths.subject_flat_features_path, flat_features)
 
+    subject.save_flat_features_to_csv()
+
     return flat_features, channels_spikes_features, index_to_channel, groups
 
 

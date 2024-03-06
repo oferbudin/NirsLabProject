@@ -22,7 +22,10 @@ class Paths:
         self.subject_channels_spikes_features_dir_path = os.path.join(self.subject_products_dir_path_by_model, 'features')
         self.subject_channel_name_to_index_path = os.path.join(self.subject_products_dir_path_by_model, 'channel_name_to_index.npy')
         self.subject_channels_spikes_features_path = os.path.join(self.subject_channels_spikes_features_dir_path, 'channels_spikes_features.npy')
-        self.subject_flat_features_path = os.path.join(self.subject_channels_spikes_features_dir_path, 'flat_features.npy')
+        self.subject_flat_features_path = os.path.join(self.subject_channels_spikes_features_dir_path,
+                                                       'flat_features.npy')
+        self.subject_flat_features_dataframe_path = os.path.join(self.subject_channels_spikes_features_dir_path,
+                                                                 f'{subject}_flat_features.csv')
         self.subject_resampled_data_dir_path = os.path.join(self.subject_products_dir_path, 'resampled')
         self.subject_raster_plots_dir_path = os.path.join(self.subject_plots_dir_path, "raster")
         self.subject_raincloud_plots_dir_path = os.path.join(self.subject_plots_dir_path, "raincloud")
