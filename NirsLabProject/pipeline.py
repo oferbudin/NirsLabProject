@@ -104,7 +104,7 @@ if __name__ == '__main__':
     # for p in [p.split('.')[0] for p in os.listdir(Paths.raw_data_dir_path) if p.startswith('p')]:
     for p in ['p402']:
         for model_name in os.listdir(Paths.models_dir_path):
-            if model_name == 'old' or 'f18' not in model_name:
+            if model_name == 'old' or 'f17' not in model_name:
                 continue
             print(f'Processing {p}, model: {model_name}')
             main(p, False, model_name)
