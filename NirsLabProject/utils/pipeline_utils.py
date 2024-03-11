@@ -178,7 +178,7 @@ def get_flat_features(subject: Subject, seeg_raw: dict[str, mne.io.Raw], intracr
     return flat_features, channels_spikes_features, index_to_channel, groups
 
 
-def create_raster_plots(subject: Subject, seeg_raw: dict[str, mne.io.Raw], channels_spikes_features: Dict[str, np.ndarray], scalp_spikes_windows: np.ndarray):
+def create_raster_plots(subject: Subject, seeg_raw: dict[str, mne.io.Raw], channels_spikes_features: Dict[str, np.ndarray]):
     # converting the timestamps to seconds
     channel_spikes = {channel_name: channel_spikes[:, TIMESTAMP_INDEX] / SR for channel_name, channel_spikes in
                       channels_spikes_features.items()}

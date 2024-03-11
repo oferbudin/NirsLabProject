@@ -267,7 +267,8 @@ class UniChannelModel(Model):
 
     def format_raw(self, raw: mne.io.Raw, subj: Subject) -> np.ndarray:
         chan = raw.ch_names[0]
-        if not os.path.exists(subj.paths.subject_channels_spikes_features_intracranial_model(chan)):
+        chan_part = f'{chan}_{raw.first_samp}_{raw.last_samp}'
+        if not os.path.exists(subj.paths.subject_channels_spikes_features_intracranial_model(chan_part)):
             window_size = int(SR / DIVISION_FACTOR)  # 250 ms
             x = pd.DataFrame()
 
@@ -294,9 +295,9 @@ class UniChannelModel(Model):
             curr_feat['epoch'] = epochs
             x = pd.concat([x, curr_feat], axis=0)
 
-            x.to_pickle(subj.paths.subject_channels_spikes_features_intracranial_model(chan))
+            x.to_pickle(subj.paths.subject_channels_spikes_features_intracranial_model(chan_part))
         else:
-            x = pd.read_pickle(subj.paths.subject_channels_spikes_features_intracranial_model(chan))
+            x = pd.read_pickle(subj.paths.subject_channels_spikes_features_intracranial_model(chan_part))
 
         return x
 

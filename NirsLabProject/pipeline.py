@@ -40,7 +40,7 @@ def main(subject_name: str, bipolar_model: bool = True, model_name: str = ''):
     channel_name_to_index = {name: index for index, name in index_to_channel_name.items()}
 
     # creates raster plots of the intracranial spikes
-    pipeline_utils.create_raster_plots(subject, raw, channels_spikes_features, scalp_spikes_spikes_windows)
+    pipeline_utils.create_raster_plots(subject, raw, channels_spikes_features)
 
     # plot the electrodes coordinates in 3D space
     # pipeline_utils.save_electrodes_coordinates(subject, raw)
