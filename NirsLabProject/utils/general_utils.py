@@ -338,6 +338,8 @@ def calculate_coordinates(subject: Subject, avarage = False):
     for file in [file for file in os.listdir(Paths.coordinates_data_dir_path) if file.endswith('.electrodeNames')]:
         loc_file_path = os.path.join(Paths.coordinates_data_dir_path, file)
         pial_file_path = os.path.join(Paths.coordinates_data_dir_path, file.replace('.electrodeNames', '.Pial'))
+        if not os.path.exists(loc_file_path) or not os.path.exists(pial_file_path):
+            continue
         electrode_name_to_location = read_coordinates_files(loc_file_path, pial_file_path)
         for electrode_name, location in electrode_name_to_location.items():
             if electrode_name not in _sum:
