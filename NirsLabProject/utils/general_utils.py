@@ -297,6 +297,7 @@ def read_coordinates_files(electrodes_name_file_path: str, electrodes_location_f
         delimiter=' ',
         usecols=[0],
         skiprows=2,
+        header=None,
         dtype={0: str}
     )
 
@@ -307,6 +308,8 @@ def read_coordinates_files(electrodes_name_file_path: str, electrodes_location_f
         header=None,
         dtype={0: float, 1: float, 2: float}
     )
+
+    
 
     name_to_coordinates = {}
     for names_row, location_row in zip(name_data.iterrows(), location_data.iterrows()):

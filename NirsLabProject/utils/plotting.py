@@ -478,7 +478,6 @@ def generate_color_gradient(values: list) -> dict:
 def plot_feature_on_electrodes(subject: Subject, features: dict, name: str, unit: str = '', float_format: str = '.1f', marker_size: float = 10):
     values = [d['value'] for ch, d in features.items()]
     colors_plate = generate_color_gradient(values)
-    plotting.plot_connectome()
 
     colors = []
     cords = []
@@ -491,7 +490,6 @@ def plot_feature_on_electrodes(subject: Subject, features: dict, name: str, unit
             marker_labels.append(current_organ)
         else:
             marker_labels.append('')
-            # marker_labels.append(channel)
         colors.append(colors_plate[features[channel]['value']])
         cords.append(features[channel]['cords'])
 
