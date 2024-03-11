@@ -107,11 +107,11 @@ def channel_processing(subject: Subject, raw: mne.io.Raw, spikes_windows: Dict[s
         axis=1
     )
 
-    # if channel_name.endswith('1'):
-    #     plotting.create_PSD_plot(subject, channel_raw, channel_spikes_indexes, channel_name)
-    #     plotting.create_TFR_plot(subject, channel_raw, channel_spikes_indexes, channel_name)
-    #     plotting.create_ERP_plot(subject, filtered_channel_raw, channel_spikes_indexes, channel_name)
-    #     plotting.create_channel_features_histograms(subject, amplitudes, lengths, channel_name)
+    if channel_name.endswith('1'):
+        plotting.create_PSD_plot(subject, channel_raw, channel_spikes_indexes, channel_name)
+        plotting.create_TFR_plot(subject, channel_raw, channel_spikes_indexes, channel_name)
+        plotting.create_ERP_plot(subject, channel_raw, channel_spikes_indexes, channel_name)
+        plotting.create_channel_features_histograms(subject, amplitudes, lengths, channel_name)
 
     return channel_spikes_features
 
@@ -200,16 +200,6 @@ def create_raster_plots(subject: Subject, seeg_raw: dict[str, mne.io.Raw], chann
         tmin=tmin,
         tmax=tmax,
         add_hypnogram=True,
-        add_histogram=True,
-    )
-
-    # raster plot with histogram
-    plotting.create_raster_plot(
-        subject=subject,
-        spikes=channel_spikes,
-        tmin=tmin,
-        tmax=tmax,
-        add_hypnogram=False,
         add_histogram=True,
     )
 

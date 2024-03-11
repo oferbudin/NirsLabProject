@@ -156,20 +156,12 @@ class Model:
         start_time = time.time()
         features = self.format_raw(raw, subject)
         print(f'Feature extraciotn time: {time.time() - start_time}')
+        features = np.nan_to_num(features[self.feature_names])
 
-        if self.model_name.startswith('xgb'):
-            feature_names = self.model.get_booster().feature_names
-        else:
-            feature_names = self.model.feature_name_
-
-        features = np.nan_to_num(features[feature_names])
-        # features = np.nan_to_num(features)
-
-        # predict using the models
-        predictions = self.model.predict(features)
-
-        # combine the predictions
-        y = np.array(predictions)
+        # predict using the model
+        # predictions = self.model.predict(features)
+        predictions = self.model.predict_proba(features)
+        y = (predictions[:, 1] >= 0.8).astype(int)
 
         spikes_onsets = np.where(y == 1)[0] / DIVISION_FACTOR
         return spikes_onsets
@@ -249,7 +241,9 @@ class UniChannelModel(Model):
     def __init__(self, model_name: str = ''):
         super(UniChannelModel, self).__init__()
         self.model_name = model_name
-        self.model = joblib.load(os.path.join(Paths.models_dir_path, model_name))
+        model, feature_names = joblib.load(os.path.join(Paths.models_dir_path, model_name)).values()
+        self.model = model
+        self.feature_names = feature_names
 
     def add_power_ratio(self, feat: np.ndarray):
         # Add power ratios for EEG
@@ -282,7 +276,7 @@ class UniChannelModel(Model):
             # normalize chan
             chan_norm = (chan_raw - chan_raw.mean()) / chan_raw.std()
             # run on all 250ms epochs
-            for i in range(0, len(chan_norm), window_size):
+            for i in range(0, len(chan_norm) - window_size, window_size):
                 epochs.append(chan_norm[i: i + window_size])
 
             curr_feat = extract_epochs_top_features(epochs, subj.p_number, raw.info['sfreq'])
@@ -434,16 +428,19 @@ def extract_epochs_features_mne(epochs, subj, sr):
 
 
 def extract_epochs_top_features(epochs, subj, sr):
+    mobility, complexity = ant.hjorth_params(epochs, axis=1)
     feat = {
         'subj': np.full(len(epochs), subj),
         'epoch_id': np.arange(len(epochs)),
+        'kurtosis': sp_stats.kurtosis(epochs, axis=1),
+        'hjorth_mobility': mobility,
+        'hjorth_complexity': complexity,
+        'ptp_amp': np.ptp(epochs, axis=1),
+        'samp_entropy': np.apply_along_axis(ant.sample_entropy, axis=1, arr=epochs)
     }
 
-    selected_funcs = ['teager_kaiser_energy', 'hjorth_mobility', 'ptp_amp',
-                      'kurtosis', 'pow_freq_bands']
-    bands_dict_pow = {'sigma': (12, 16), 'gamma': (30, 100), 'fast': (100, 300)}
-    params = {'pow_freq_bands__freq_bands': bands_dict_pow, 'pow_freq_bands__ratios': 'all'}
-    X_new = extract_features(np.array(epochs)[:, np.newaxis, :], sr, selected_funcs, funcs_params=params,
+    selected_funcs = ['teager_kaiser_energy']
+    X_new = extract_features(np.array(epochs)[:, np.newaxis, :], sr, selected_funcs,
                              return_as_df=True)
     # rename columns
     names = []
