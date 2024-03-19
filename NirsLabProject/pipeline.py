@@ -27,8 +27,7 @@ def main(subject_name: str, bipolar_model: bool = True, model_name: str = ''):
         eog_raw = None
 
     # detects scalp spikes if the subject is not from the detections project
-    # if subject.stimuli_project:
-    if True:
+    if subject.stimuli_project:
         scalp_spikes_spikes_windows = np.array([])
     else:
         scalp_spikes_spikes_windows = scalp_spikes_detection.detect_spikes_of_subject(subject, eog_raw)
@@ -43,34 +42,34 @@ def main(subject_name: str, bipolar_model: bool = True, model_name: str = ''):
     pipeline_utils.create_raster_plots(subject, raw, channels_spikes_features)
 
     # plot the electrodes coordinates in 3D space
-    # pipeline_utils.save_electrodes_coordinates(subject, raw)
+    pipeline_utils.save_electrodes_coordinates(subject, raw)
 
     # plots the spikes features histograms in 3D space
-    # plotting.plot_avg_spike_amplitude_by_electrode(subject, channels_spikes_features)
-    # plotting.plot_number_of_spikes_by_electrode(subject, channels_spikes_features)
+    plotting.plot_avg_spike_amplitude_by_electrode(subject, channels_spikes_features)
+    plotting.plot_number_of_spikes_by_electrode(subject, channels_spikes_features)
 
-    # if subject.stimuli_project:
-    #     for electrode_name in raw.keys():
-    #         electrode_raw = raw[electrode_name]
-    #         channel_name = electrode_raw.ch_names[0]
-    #         print(f'Creating erp, tfr and psd plots for {electrode_name} - {channel_name}')
-    #         plotting.create_erp_of_stimuli_and_pause_blocks(subject, flat_features, electrode_raw, channel_name, channel_name_to_index)
-    #         plotting.create_tfr_of_stimuli_and_pause_blocks(subject, flat_features, electrode_raw, channel_name, channel_name_to_index)
-    #         plotting.create_psd_of_stimuli_and_no_stimuli_blocks(subject, flat_features, electrode_raw, channel_name, channel_name_to_index)
-    #     # plots the effects of the stimuli on the spikes features before, during and after the stimuli
-    #     # plotting.stimuli_effects_raincloud_plots(subject, flat_features, index_to_channel)
-    # else:
-    #     # plots the correlation between the scalp spikes and the intracranial spikes
-    #     plotting.create_raincloud_plot_for_all_spikes_features(subject, flat_features)
-    #     plotting.plot_scalp_detection_probability_for_every_electrode_in_3d(subject, flat_features, index_to_channel_name)
-    #     for electrode_name in raw.keys():
-    #         electrode_raw = raw[electrode_name]
-    #         channel_name = electrode_raw.ch_names[0]
-    #         print(f'Creating erp and tfr plots for {electrode_name} - {channel_name}')
-    #         plotting.create_erp_of_detected_and_not_detected(subject, flat_features, electrode_raw, channel_name, channel_name_to_index)
-    #         plotting.create_tfr_of_detected_and_not_detected(subject, flat_features, electrode_raw, channel_name, channel_name_to_index)
-    #     plotting.create_eog_tfr(subject, flat_features, eog_raw, 'LH1', channel_name_to_index)
-    #     plotting.create_eog_erp(subject, flat_features, eog_raw, 'LH1', channel_name_to_index)
+    if subject.stimuli_project:
+        for electrode_name in raw.keys():
+            electrode_raw = raw[electrode_name]
+            channel_name = electrode_raw.ch_names[0]
+            print(f'Creating erp, tfr and psd plots for {electrode_name} - {channel_name}')
+            plotting.create_erp_of_stimuli_and_pause_blocks(subject, flat_features, electrode_raw, channel_name, channel_name_to_index)
+            plotting.create_tfr_of_stimuli_and_pause_blocks(subject, flat_features, electrode_raw, channel_name, channel_name_to_index)
+            plotting.create_psd_of_stimuli_and_no_stimuli_blocks(subject, flat_features, electrode_raw, channel_name, channel_name_to_index)
+        # plots the effects of the stimuli on the spikes features before, during and after the stimuli
+        # plotting.stimuli_effects_raincloud_plots(subject, flat_features, index_to_channel)
+    else:
+        # plots the correlation between the scalp spikes and the intracranial spikes
+        plotting.create_raincloud_plot_for_all_spikes_features(subject, flat_features)
+        plotting.plot_scalp_detection_probability_for_every_electrode_in_3d(subject, flat_features, index_to_channel_name)
+        for electrode_name in raw.keys():
+            electrode_raw = raw[electrode_name]
+            channel_name = electrode_raw.ch_names[0]
+            print(f'Creating erp and tfr plots for {electrode_name} - {channel_name}')
+            plotting.create_erp_of_detected_and_not_detected(subject, flat_features, electrode_raw, channel_name, channel_name_to_index)
+            plotting.create_tfr_of_detected_and_not_detected(subject, flat_features, electrode_raw, channel_name, channel_name_to_index)
+        plotting.create_eog_tfr(subject, flat_features, eog_raw, 'LH1', channel_name_to_index)
+        plotting.create_eog_erp(subject, flat_features, eog_raw, 'LH1', channel_name_to_index)
 
 
 # subjects_names can be a list of subjects that have files in Google Drive

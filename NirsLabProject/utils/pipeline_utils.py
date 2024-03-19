@@ -33,6 +33,7 @@ def resample_and_filter_data(subject: Subject):
     if FORCE_LOAD_EDF or not os.listdir(subject.paths.subject_resampled_data_dir_path):
         print('Reampled data not exist exists, loading...')
         raw = mne.io.read_raw_edf(subject.paths.subject_raw_edf_path)
+        raw = utils.remove_bad_channels(subject, raw)
         raw = utils.pick_seeg_and_eog_channels(raw)
         utils.clean_channels_name_in_raw_obj(subject, raw)
         print(f'Raw data shape: {raw.tmax - raw.tmin} seconds, {raw.ch_names} channels, {raw.info["sfreq"]} Hz')
@@ -41,7 +42,6 @@ def resample_and_filter_data(subject: Subject):
             if FORCE_LOAD_EDF or not os.path.exists(electrode_path):
                 print(f'Pre-processing channels of electrode {electrode_name}...')
                 raw_electrode = raw.copy().pick_channels(group)
-                # raw_electrode = utils.remove_bad_channels(raw_electrode) TODO: check if needed - not working
                 if raw_electrode.info['sfreq'] != SR:
                     print(f'Resampling data, it might take some time... (around {len(raw_electrode.ch_names) * 5 // 60} minutes)')
                     raw_electrode = raw_electrode.resample(SR, verbose=True, n_jobs=2)
@@ -65,6 +65,7 @@ def resample_and_filter_data(subject: Subject):
         electrode_path = subject.paths.subject_resampled_fif_path(subject.name, electrode_name)
         print(f'Data for electrode {electrode_name} was already resampled, reading it...')
         channel_raw = mne.io.read_raw_fif(electrode_path)
+        channel_raw = utils.remove_bad_channels(subject, channel_raw)  # a duplication for an already read raw
         utils.clean_channels_name_in_raw_obj(subject, channel_raw)
         loaded_raw[electrode_name] = channel_raw
         print(f'Raw data shape: {channel_raw.tmax - channel_raw.tmin} seconds, {channel_raw.ch_names} channels, {channel_raw.info["sfreq"]} Hz')

@@ -7,6 +7,7 @@ class Paths:
     stimuli_locations_file = os.path.join(data_dir_path, 'stimLocation.csv')
     models_dir_path = os.path.join(data_dir_path, 'models')
     raw_data_dir_path = os.path.join(data_dir_path, 'raw_data')
+    bad_channels_dir_path = os.path.join(data_dir_path, 'bad_channels')
     stimuli_dir_path = os.path.join(data_dir_path, 'stimuli')
     hypnogram_data_dir_path = os.path.join(data_dir_path, 'hypnograms')
     products_data_dir_path = os.path.join(data_dir_path, 'products')
@@ -45,6 +46,7 @@ class Paths:
         self.subject_raster_plot_path = os.path.join(self.subject_raster_plots_dir_path, f'{subject}_raster_plot.png')
         self.subject_hypno_raster_plot_path = os.path.join(self.subject_raster_plots_dir_path, f'{subject}_hypno_raster_plot.png')
         self.subject_cut_hypno_raster_plot_path = os.path.join(self.subject_raster_plots_dir_path, f'{subject}_cut_hypno_raster_plot.png')
+        self.subject_bad_channels_path = os.path.join(self.bad_channels_dir_path, f'{subject}_bad_channels.txt')
 
     def subject_resampled_fif_path(self, subject, electrode_name):
         return os.path.join(self.subject_resampled_data_dir_path, f'{subject}_resampled_{electrode_name}.fif')

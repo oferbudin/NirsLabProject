@@ -358,8 +358,23 @@ def calculate_coordinates(subject: Subject, avarage = False):
     return _sum
 
 
-def remove_bad_channels(raw: mne.io.Raw):
+def remove_bad_channels(subjcet, raw: mne.io.Raw) -> list:
     print('Removing bad channels, might take a while...')
+    if os.path.exists(subjcet.paths.subject_bad_channels_path):
+        with open(subjcet.paths.subject_bad_channels_path, 'r') as file:
+            # we use set to support reading of raw data electrode by electrode
+            bad_channels = set(file.read().splitlines())
+            raw_channels = set(raw.ch_names)
+            bad_channels = list(bad_channels.intersection(raw_channels))
+            print(f'Found bad channels file for subject {subjcet.p_number}, removing channels: {bad_channels}')
+            if raw:
+                return raw.pick_channels([channel for channel in raw.ch_names if channel not in bad_channels])
+            return raw
+    else:
+        print(f'No bad channels file found for subject {subjcet.p_number}')
+        return raw
+
+    # currently we skip this logic and reading the bad channels from a dedicated file
 
     n_time_windows = int(raw.tmax - raw.tmin)
     channel_names = list(raw.ch_names)
