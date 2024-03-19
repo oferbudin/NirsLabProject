@@ -310,32 +310,41 @@ def save_detection_to_npz_file(detections: Dict[str, np.ndarray], subject: Subje
     np.savez(subject.paths.subject_spikes_path, **detections)
 
 
+def remove_stimuli_segments(raw, subject: Subject):
+    total_time = raw.tmax - raw.tmin
+    raw_segs = []
+    last_end = 0.0  # Initialize the end time of the last segment
+
+    stimuli_time_windows = utils.get_stimuli_time_windows(subject)
+    for seg_start, seg_end in stimuli_time_windows:
+        raw_segs.append(
+            raw.copy().crop(
+                tmin=last_end,
+                tmax=seg_start,
+                include_tmax=False,
+            )
+        )
+        last_end = seg_end
+
+    # Append the remaining part after the last rejected segment
+    raw_segs.append(
+        raw.copy().crop(
+            tmin=last_end,
+            tmax=None,  # Crop till the end of the recording
+            include_tmax=False,
+        )
+    )
+
+    stimuli_time_windows_time = sum([seg_end - seg_start for seg_start, seg_end in stimuli_time_windows])
+    print(f'Raw data time: {total_time} | Stimuli time windows: {stimuli_time_windows_time} was removed from the raw data.')
+    new_raw = mne.concatenate_raws(raw_segs)
+    print(f'New raw data time: {new_raw.tmax - new_raw.tmin}')
+    return new_raw
+
+
 def handle_stimuli(model, raw: mne.io.Raw, subject: Subject) -> np.ndarray:
-    spikes = np.asarray([])
-
-    stim_sections_sec = utils.get_stimuli_time_windows(subject)
-    stim_start_sec = stim_sections_sec[0][0]
-
-    # get all raw data until the first stim
-    baseline_raw = raw.copy().crop(tmin=0, tmax=stim_start_sec)
-    spikes = np.concatenate((spikes, model.predict(baseline_raw, subject)), axis=0)
-
-    # fill sections of stim and the stops between
-    for i, (start, end) in enumerate(stim_sections_sec):
-        # fill the current stim
-        raw_without_stim = utils.remove_stimuli_from_raw(subject, raw.copy().crop(tmin=start, tmax=end), start, end)
-        new_spikes = start + model.predict(raw_without_stim, subject)
-        spikes = np.concatenate((spikes, new_spikes), axis=0)
-        if i + 1 < len(stim_sections_sec):
-            # the stop is the time between the end of the curr section and the start of the next, buffer of 0.5 sec of the stim
-            next_data = raw.copy().crop(tmin=end + 0.5, tmax=stim_sections_sec[i + 1][0] - 0.5)
-            new_spikes = end + 0.5 + model.predict(next_data, subject)
-            spikes = np.concatenate((spikes, new_spikes), axis=0)
-        else:
-            data_to_the_end = raw.copy().crop(tmin=end + 0.5, tmax=raw.tmax)
-            new_spikes = end + 0.5 + model.predict(data_to_the_end, subject)
-            spikes = np.concatenate((spikes, new_spikes), axis=0)
-    return spikes
+    channels_raw = remove_stimuli_segments(raw.copy(), subject)
+    return model.predict(channels_raw, subject)
 
 
 def detect_spikes_of_subject_for_specific_channels(subject: Subject, raw: mne.io.Raw, channels: list, model) -> Dict[str, np.ndarray]:
