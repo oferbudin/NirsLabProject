@@ -33,6 +33,7 @@ def resample_and_filter_data(subject: Subject):
     if FORCE_LOAD_EDF or not os.listdir(subject.paths.subject_resampled_data_dir_path):
         print('Reampled data not exist exists, loading...')
         raw = mne.io.read_raw_edf(subject.paths.subject_raw_edf_path)
+        raw = utils.remove_bad_channels(subject, raw)
         raw = utils.pick_seeg_and_eog_channels(raw)
         utils.clean_channels_name_in_raw_obj(subject, raw)
         print(f'Raw data shape: {raw.tmax - raw.tmin} seconds, {raw.ch_names} channels, {raw.info["sfreq"]} Hz')
@@ -41,7 +42,6 @@ def resample_and_filter_data(subject: Subject):
             if FORCE_LOAD_EDF or not os.path.exists(electrode_path):
                 print(f'Pre-processing channels of electrode {electrode_name}...')
                 raw_electrode = raw.copy().pick_channels(group)
-                # raw_electrode = utils.remove_bad_channels(raw_electrode) TODO: check if needed - not working
                 if raw_electrode.info['sfreq'] != SR:
                     print(f'Resampling data, it might take some time... (around {len(raw_electrode.ch_names) * 5 // 60} minutes)')
                     raw_electrode = raw_electrode.resample(SR, verbose=True, n_jobs=2)
@@ -65,6 +65,7 @@ def resample_and_filter_data(subject: Subject):
         electrode_path = subject.paths.subject_resampled_fif_path(subject.name, electrode_name)
         print(f'Data for electrode {electrode_name} was already resampled, reading it...')
         channel_raw = mne.io.read_raw_fif(electrode_path)
+        channel_raw = utils.remove_bad_channels(subject, channel_raw)  # a duplication for an already read raw
         utils.clean_channels_name_in_raw_obj(subject, channel_raw)
         loaded_raw[electrode_name] = channel_raw
         print(f'Raw data shape: {channel_raw.tmax - channel_raw.tmin} seconds, {channel_raw.ch_names} channels, {channel_raw.info["sfreq"]} Hz')
@@ -107,11 +108,11 @@ def channel_processing(subject: Subject, raw: mne.io.Raw, spikes_windows: Dict[s
         axis=1
     )
 
-    # if channel_name.endswith('1'):
-    #     plotting.create_PSD_plot(subject, channel_raw, channel_spikes_indexes, channel_name)
-    #     plotting.create_TFR_plot(subject, channel_raw, channel_spikes_indexes, channel_name)
-    #     plotting.create_ERP_plot(subject, filtered_channel_raw, channel_spikes_indexes, channel_name)
-    #     plotting.create_channel_features_histograms(subject, amplitudes, lengths, channel_name)
+    if channel_name.endswith('1'):
+        plotting.create_PSD_plot(subject, channel_raw, channel_spikes_indexes, channel_name)
+        plotting.create_TFR_plot(subject, channel_raw, channel_spikes_indexes, channel_name)
+        plotting.create_ERP_plot(subject, channel_raw, channel_spikes_indexes, channel_name)
+        plotting.create_channel_features_histograms(subject, amplitudes, lengths, channel_name)
 
     return channel_spikes_features
 
@@ -178,12 +179,13 @@ def get_flat_features(subject: Subject, seeg_raw: dict[str, mne.io.Raw], intracr
     return flat_features, channels_spikes_features, index_to_channel, groups
 
 
-def create_raster_plots(subject: Subject, seeg_raw: dict[str, mne.io.Raw], channels_spikes_features: Dict[str, np.ndarray], scalp_spikes_windows: np.ndarray):
+def create_raster_plots(subject: Subject, seeg_raw: dict[str, mne.io.Raw], channels_spikes_features: Dict[str, np.ndarray]):
     # converting the timestamps to seconds
     channel_spikes = {channel_name: channel_spikes[:, TIMESTAMP_INDEX] / SR for channel_name, channel_spikes in
                       channels_spikes_features.items()}
-    eog_channels_spikes = {'EOG1': [spike for spike in scalp_spikes_windows]}
-    channel_spikes.update(eog_channels_spikes)
+    # if scalp_spikes_windows is not None:
+    #     eog_channels_spikes = {'EOG1': [spike for spike in scalp_spikes_windows]}
+    #     channel_spikes.update(eog_channels_spikes)
 
     tmin = tmax = 0
     for channel_name, channel_raw in seeg_raw.items():
@@ -199,16 +201,6 @@ def create_raster_plots(subject: Subject, seeg_raw: dict[str, mne.io.Raw], chann
         tmin=tmin,
         tmax=tmax,
         add_hypnogram=True,
-        add_histogram=True,
-    )
-
-    # raster plot with histogram
-    plotting.create_raster_plot(
-        subject=subject,
-        spikes=channel_spikes,
-        tmin=tmin,
-        tmax=tmax,
-        add_hypnogram=False,
         add_histogram=True,
     )
 
@@ -258,7 +250,7 @@ def baseline_diff(a, b):
     return res
 
 
-def get_subjects(filters=None, sort_key=None):
+def get_subjects(filters=None, sort_key=None) -> Subject:
     subjects = [Subject(d, True) for d in os.listdir(Paths.products_data_dir_path) if d.startswith('p')]
     if filters:
         for filt in filters:

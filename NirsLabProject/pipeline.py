@@ -13,8 +13,8 @@ from NirsLabProject.utils import scalp_spikes_detection, intracranial_spikes_det
 from NirsLabProject.utils.google_drive_download import GoogleDriveDownloader
 
 
-def main(subject_name: str):
-    subject = Subject(subject_name, True)
+def main(subject_name: str, bipolar_model: bool = True, model_name: str = ''):
+    subject = Subject(subject_name, bipolar_model, model_name)
 
     # resamples and filters the data
     raw = pipeline_utils.resample_and_filter_data(subject)
@@ -39,7 +39,7 @@ def main(subject_name: str):
     channel_name_to_index = {name: index for index, name in index_to_channel_name.items()}
 
     # creates raster plots of the intracranial spikes
-    pipeline_utils.create_raster_plots(subject, raw, channels_spikes_features, scalp_spikes_spikes_windows)
+    pipeline_utils.create_raster_plots(subject, raw, channels_spikes_features)
 
     # plot the electrodes coordinates in 3D space
     pipeline_utils.save_electrodes_coordinates(subject, raw)
@@ -101,14 +101,19 @@ def run_all_detection_project(subjects_names: list = None):
 if __name__ == '__main__':
     start_time = time.time()
     # for p in [p.split('.')[0] for p in os.listdir(Paths.raw_data_dir_path) if p.startswith('p')]:
-    #         print(f'Processing {p}')
+    for p in ['p402']:
+        for model_name in os.listdir(Paths.models_dir_path):
+            if model_name == 'old' or 'f17' not in model_name:
+                continue
+            print(f'Processing {p}, model: {model_name}')
+            main(p, False, model_name)
     # for p in ['p485', 'p486', 'p488', 'p496', 'p499', 'p520']:
     #     main(p)
 
     # run_all_detection_project(['p51'])
 
     # pipeline_utils.detection_project_intersubjects_plots(True)
-    pipeline_utils.stimuli_effects(control=True, compare_to_base_line=True)
-    pipeline_utils.stimuli_effects(control=True, compare_to_base_line=False)
+    # pipeline_utils.stimuli_effects(control=True, compare_to_base_line=True)
+    # pipeline_utils.stimuli_effects(control=True, compare_to_base_line=False)
 
     print(f'Time taken: {(time.time() - start_time) / 60} minutes')

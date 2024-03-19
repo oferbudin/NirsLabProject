@@ -167,7 +167,7 @@ def extract_spikes_peaks_features(channel_data: np.ndarray, spikes: np.ndarray) 
     spikes = np.unique(spikes).flatten()
 
     if spikes.shape[0] == 0:
-        return np.array([]), np.array([])
+        return np.array([]), np.array([]), np.array([]), np.array([]), np.array([])
 
     # Vectorized feature extraction using np.vectorize
     v_extract_features = np.vectorize(partial(get_spike_amplitude_and_length, channel_data))
@@ -260,6 +260,36 @@ def calculate_coordinates_sourasky(subject: Subject):
 
     return coords
 
+def calculate_coordinates_sourasky_avrage():
+    data = pd.read_csv(
+        filepath_or_buffer=Paths.sourasky_coordinates_path,
+        delimiter=','
+    )
+    coords_counter = {}
+    coords_sum = {}
+    for i, row in data.iterrows():
+        channel_name = row['Channel Name'].replace("'", "")
+        channel_name = foramt_sourasky_patients_channel_names(channel_name)
+        if channel_name not in coords_counter:
+            coords_counter[channel_name] = 0
+            coords_sum[channel_name] = [0, 0, 0]
+        coords_counter[channel_name] += 1
+        coords_sum[channel_name][0] += row['MNI_X']
+        coords_sum[channel_name][1] += row['MNI_Y']
+        coords_sum[channel_name][2] += row['MNI_Z']
+
+    coords = {}
+    for channel_name in coords_counter:
+        coords[channel_name] = (
+            coords_sum[channel_name][0] / coords_counter[channel_name],
+            coords_sum[channel_name][1] / coords_counter[channel_name],
+            coords_sum[channel_name][2] / coords_counter[channel_name]
+        )
+    
+    return coords
+    
+
+
 
 def read_coordinates_files(electrodes_name_file_path: str, electrodes_location_file_path: str):
     name_data = pd.read_csv(
@@ -267,6 +297,7 @@ def read_coordinates_files(electrodes_name_file_path: str, electrodes_location_f
         delimiter=' ',
         usecols=[0],
         skiprows=2,
+        header=None,
         dtype={0: str}
     )
 
@@ -277,6 +308,8 @@ def read_coordinates_files(electrodes_name_file_path: str, electrodes_location_f
         header=None,
         dtype={0: float, 1: float, 2: float}
     )
+
+    
 
     name_to_coordinates = {}
     for names_row, location_row in zip(name_data.iterrows(), location_data.iterrows()):
@@ -289,14 +322,15 @@ def read_coordinates_files(electrodes_name_file_path: str, electrodes_location_f
     return name_to_coordinates
 
 
-def calculate_coordinates(subject: Subject):
-    print(f'calculating coordinates for subject {subject.p_number}')
-    if subject.sourasky_project:
-        return calculate_coordinates_sourasky(subject)
-    if subject.p_number in [5101, 5107]:
-        subject = Subject('p510', subject.bipolar_model)
-    if os.path.exists(subject.paths.subject_electrode_name_file) and os.path.isfile(subject.paths.subject_electrode_locations):
-        return read_coordinates_files(subject.paths.subject_electrode_name_file, subject.paths.subject_electrode_locations)
+def calculate_coordinates(subject: Subject, avarage = False):
+    if not avarage:
+        print(f'calculating coordinates for subject {subject.p_number}')
+        if subject.sourasky_project:
+            return calculate_coordinates_sourasky(subject)
+        if subject.p_number in [5101, 5107]:
+            subject = Subject('p510', subject.bipolar_model)
+        if os.path.exists(subject.paths.subject_electrode_name_file) and os.path.isfile(subject.paths.subject_electrode_locations):
+            return read_coordinates_files(subject.paths.subject_electrode_name_file, subject.paths.subject_electrode_locations)
 
     print('no coordinates file found, calculating coordinates from average coordinates files')
     _sum = {}
@@ -304,6 +338,8 @@ def calculate_coordinates(subject: Subject):
     for file in [file for file in os.listdir(Paths.coordinates_data_dir_path) if file.endswith('.electrodeNames')]:
         loc_file_path = os.path.join(Paths.coordinates_data_dir_path, file)
         pial_file_path = os.path.join(Paths.coordinates_data_dir_path, file.replace('.electrodeNames', '.Pial'))
+        if not os.path.exists(loc_file_path) or not os.path.exists(pial_file_path):
+            continue
         electrode_name_to_location = read_coordinates_files(loc_file_path, pial_file_path)
         for electrode_name, location in electrode_name_to_location.items():
             if electrode_name not in _sum:
@@ -322,8 +358,23 @@ def calculate_coordinates(subject: Subject):
     return _sum
 
 
-def remove_bad_channels(raw: mne.io.Raw):
+def remove_bad_channels(subjcet, raw: mne.io.Raw) -> list:
     print('Removing bad channels, might take a while...')
+    if os.path.exists(subjcet.paths.subject_bad_channels_path):
+        with open(subjcet.paths.subject_bad_channels_path, 'r') as file:
+            # we use set to support reading of raw data electrode by electrode
+            bad_channels = set(file.read().splitlines())
+            raw_channels = set(raw.ch_names)
+            bad_channels = list(bad_channels.intersection(raw_channels))
+            print(f'Found bad channels file for subject {subjcet.p_number}, removing channels: {bad_channels}')
+            if raw:
+                return raw.pick_channels([channel for channel in raw.ch_names if channel not in bad_channels])
+            return raw
+    else:
+        print(f'No bad channels file found for subject {subjcet.p_number}')
+        return raw
+
+    # currently we skip this logic and reading the bad channels from a dedicated file
 
     n_time_windows = int(raw.tmax - raw.tmin)
     channel_names = list(raw.ch_names)
@@ -498,10 +549,10 @@ def add_stimuli_flag_from_another_subject_to_spikes_features(stimuli_subject: Su
     return flat_features
 
 
-def add_sleeping_stage_flag_to_spike_features(subject: Subject, flat_features: np.ndarray) -> np.ndarray:
+def add_sleeping_stage_flag_to_spike_features(subject: Subject, flat_features: np.ndarray, separate_wake_and_rem: bool = False) -> np.ndarray:
     flags = np.zeros((flat_features.shape[0], 1))
     try:
-        changing_points, values = sleeping_utils.get_hypnogram_changes_in_miliseconds(subject)
+        changing_points, values = sleeping_utils.get_hypnogram_changes_in_miliseconds(subject, separate_wake_and_rem)
     except Exception as e:
         print(f'Could not get sleeping stages for subject {subject.p_number}, error: {e}')
         flags[:] = np.NAN
@@ -517,7 +568,16 @@ def add_sleeping_stage_flag_to_spike_features(subject: Subject, flat_features: n
                 )
             )
         ] = values[i]
-
+        flags[
+            np.where(
+                flat_features[:, TIMESTAMP_INDEX] < changing_points[0]
+            )
+        ] = values[0]
+        flags[
+            np.where(
+                flat_features[:, TIMESTAMP_INDEX] > changing_points[-1]
+            )
+        ] = values[-1]
     flat_features[:, HYPNOGRAM_FLAG_INDEX] = flags.reshape(-1)
     return flat_features
 
