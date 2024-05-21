@@ -2,7 +2,7 @@
 
 DOWNLOAD_FROM_GOOGLE_DRIVE = False
 FORCE_LOAD_EDF = False
-FORCE_DETECT_SPIKES = True
+FORCE_DETECT_SPIKES = False
 FORCE_CALCULATE_SPIKES_FEATURES = True
 
 # -------------------------------------------- General -----------------------------------------------------------------
@@ -28,7 +28,7 @@ MIN_SPIKE_LENGTH_MILLISECONDS = 20
 
 
 # In stimuli project might be 1 instead of 3
-MIN_AMPLITUDE_Z_SCORE = 3
+MIN_AMPLITUDE_Z_SCORE = 1
 MAX_AMPLITUDE_Z_SCORE = 30
 
 # https://academic.oup.com/brain/article/146/5/1903/7024726

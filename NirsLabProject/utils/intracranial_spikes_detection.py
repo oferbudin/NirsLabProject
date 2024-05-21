@@ -312,34 +312,39 @@ def save_detection_to_npz_file(detections: Dict[str, np.ndarray], subject: Subje
 
 def remove_stimuli_segments(raw, subject: Subject):
     total_time = raw.tmax - raw.tmin
-    raw_segs = []
-    last_end = 0.0  # Initialize the end time of the last segment
+    stimuli_times = np.array(pd.read_csv(subject.paths.subject_stimuli_path, header=None).iloc[0, :])
 
-    stimuli_time_windows = utils.get_stimuli_time_windows(subject)
+    stimuli_time_windows = []
+    for stim_time in stimuli_times:
+        stim_time = stim_time / 1000  # Convert to seconds
+        start = stim_time - 0.5
+        end = stim_time + 0.5
+        stimuli_time_windows.append((start, end))
+
+    last_end = 0.0  # Initialize the end time of the last segment
+    raw_data = raw.get_data()
+
+    raw_data_without_stimuli = []
     for seg_start, seg_end in stimuli_time_windows:
-        raw_segs.append(
-            raw.copy().crop(
-                tmin=last_end,
-                tmax=seg_start,
-                include_tmax=False,
-            )
-        )
+        raw_data_without_stimuli.append(raw_data[:, int(last_end * SR): int(seg_start * SR)])
         last_end = seg_end
 
-    # Append the remaining part after the last rejected segment
-    raw_segs.append(
-        raw.copy().crop(
-            tmin=last_end,
-            tmax=None,  # Crop till the end of the recording
-            include_tmax=False,
-        )
-    )
+    raw_data_without_stimuli.append(raw_data[:, int(last_end * SR):])
 
-    stimuli_time_windows_time = sum([seg_end - seg_start for seg_start, seg_end in stimuli_time_windows])
-    print(f'Raw data time: {total_time} | Stimuli time windows: {stimuli_time_windows_time} was removed from the raw data.')
-    new_raw = mne.concatenate_raws(raw_segs)
+    print(
+        f'Raw data time: {total_time} | Stimuli time windows: {len(stimuli_time_windows)} seconds was removed from the raw data.')
+    new_raw = mne.io.RawArray(np.concatenate(raw_data_without_stimuli, axis=1), raw.info)
     print(f'New raw data time: {new_raw.tmax - new_raw.tmin}')
     return new_raw
+
+
+def add_stimuli_offset(subject, predictions: np.ndarray) -> np.ndarray:
+    stimuli_times = np.array(pd.read_csv(subject.paths.subject_stimuli_path, header=None).iloc[0, :])
+
+    for stim_time in stimuli_times:
+        predictions[stim_time-500:] += 1
+
+    return predictions
 
 
 def handle_stimuli(model, raw: mne.io.Raw, subject: Subject) -> np.ndarray:
@@ -377,7 +382,7 @@ def detect_spikes_of_subject(subject: Subject, electrodes_raw: dict[str, mne.io.
         all_channels = model.get_channels(raw.ch_names)
 
         # run on each channel and detect the spikes between stims
-        channels_spikes = Parallel(n_jobs=1, backend='multiprocessing')(
+        channels_spikes = Parallel(n_jobs=3, backend='multiprocessing')(
             delayed(detect_spikes_of_subject_for_specific_channels)(subject, raw, channels, model) for channels in all_channels
         )
 
