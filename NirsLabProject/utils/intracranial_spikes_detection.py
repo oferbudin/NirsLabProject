@@ -1,26 +1,24 @@
 import os
-import mne
 import time
+from typing import List, Dict, Tuple
+
+import antropy as ant
 import joblib
+import mne
 import numpy as np
 import pandas as pd
-import antropy as ant
 import scipy.signal as sp_sig
 import scipy.stats as sp_stats
-from scipy.integrate import simps
-from typing import List, Dict, Tuple
 from joblib import Parallel, delayed
+from mne_features.feature_extraction import extract_features
+from mne_features.univariate import get_univariate_funcs, compute_pow_freq_bands
+from scipy.integrate import simps
 from sklearn.preprocessing import robust_scale
 
-from NirsLabProject.utils import general_utils as utils
 from NirsLabProject.config.consts import *
 from NirsLabProject.config.paths import Paths
 from NirsLabProject.config.subject import Subject
-
-import mne
-from mne_features.feature_extraction import extract_features
-from mne_features.univariate import get_univariate_funcs, compute_pow_freq_bands
-
+from NirsLabProject.utils import general_utils as utils
 
 mne.set_config('MNE_BROWSER_BACKEND', 'qt')
 
@@ -336,15 +334,6 @@ def remove_stimuli_segments(raw, subject: Subject):
     new_raw = mne.io.RawArray(np.concatenate(raw_data_without_stimuli, axis=1), raw.info)
     print(f'New raw data time: {new_raw.tmax - new_raw.tmin}')
     return new_raw
-
-
-def add_stimuli_offset(subject, predictions: np.ndarray) -> np.ndarray:
-    stimuli_times = np.array(pd.read_csv(subject.paths.subject_stimuli_path, header=None).iloc[0, :])
-
-    for stim_time in stimuli_times:
-        predictions[stim_time-500:] += 1
-
-    return predictions
 
 
 def handle_stimuli(model, raw: mne.io.Raw, subject: Subject) -> np.ndarray:
