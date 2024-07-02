@@ -1,4 +1,5 @@
 import os
+from NirsLabProject.config import consts
 
 
 class Paths:
@@ -14,13 +15,14 @@ class Paths:
     coordinates_data_dir_path = os.path.join(data_dir_path, 'cordinates')
     sourasky_coordinates_path = os.path.join(coordinates_data_dir_path, 'sourasky_coords.csv')
 
-    def __init__(self, subject: str, bipolar: bool):
+    def __init__(self, subject: str, bipolar: bool, min_z_score: float = consts.MIN_AMPLITUDE_Z_SCORE):
         self.subject_products_dir_path = os.path.join(self.products_data_dir_path, subject)
         self.subject_electrodes_dir_path = os.path.join(self.subject_products_dir_path, 'electrodes')
+        self.subject_intracranial_model_features_dir_path = os.path.join(self.subject_products_dir_path, 'intracranial_model_features')
         self.subject_products_dir_path_by_model = os.path.join(self.subject_products_dir_path, 'bipolar_model' if bipolar else 'unichannel_model')
-        self.subject_plots_dir_path = os.path.join(self.subject_products_dir_path_by_model, 'plots')
+        self.subject_plots_dir_path = os.path.join(self.subject_products_dir_path_by_model, f'min_amplitude_{min_z_score}', 'plots')
         self.subject_spikes_dir_path = os.path.join(self.subject_products_dir_path_by_model, 'spikes')
-        self.subject_channels_spikes_features_dir_path = os.path.join(self.subject_products_dir_path_by_model, 'features')
+        self.subject_channels_spikes_features_dir_path = os.path.join(self.subject_products_dir_path_by_model, f'min_amplitude_{min_z_score}', 'features')
         self.subject_channel_name_to_index_path = os.path.join(self.subject_products_dir_path_by_model, 'channel_name_to_index.npy')
         self.subject_channels_spikes_features_path = os.path.join(self.subject_channels_spikes_features_dir_path, 'channels_spikes_features.npy')
         self.subject_flat_features_path = os.path.join(self.subject_channels_spikes_features_dir_path,
@@ -52,4 +54,4 @@ class Paths:
         return os.path.join(self.subject_resampled_data_dir_path, f'{subject}_resampled_{electrode_name}.fif')
 
     def subject_channels_spikes_features_intracranial_model(self, channel_name):
-        return os.path.join(self.subject_products_dir_path, f'{channel_name}_intracranial_features.pkl')
+        return os.path.join(self.subject_intracranial_model_features_dir_path, f'{channel_name}_intracranial_features.pkl')

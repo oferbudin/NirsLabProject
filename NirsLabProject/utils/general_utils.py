@@ -93,7 +93,7 @@ def get_data_of_spike_in_wide_window(channel_data: np.ndarray, spike_window_time
 
 
 # finds the exact spike timestamp in the timestamp window and returns the index of the spike peak
-def get_spike_amplitude_index(channel_data: np.ndarray, spike_window_timestamp: float) -> int:
+def get_spike_amplitude_index(channel_data: np.ndarray, spike_window_timestamp: float, min_amplitude_z_score) -> int:
     wide_spike_window_data, wide_spike_window_start_index, _end = get_data_of_spike_in_wide_window(
         channel_data, spike_window_timestamp)
 
@@ -108,7 +108,7 @@ def get_spike_amplitude_index(channel_data: np.ndarray, spike_window_timestamp: 
 
     # Find the spike with the highest amplitude
     peak = max(filtered_spikes, key=lambda x: x['amplitude'])
-    if peak['amplitude'] < MIN_AMPLITUDE_Z_SCORE or peak['length'] < MIN_SPIKE_LENGTH_MILLISECONDS:
+    if peak['amplitude'] < min_amplitude_z_score or peak['length'] < MIN_SPIKE_LENGTH_MILLISECONDS:
         return -1
 
     # Return the spike index in the channel data
@@ -116,13 +116,13 @@ def get_spike_amplitude_index(channel_data: np.ndarray, spike_window_timestamp: 
 
 
 # Returns the spike indexes in the channel data for each spike in the spikes window array
-def get_spikes_peak_indexes_in_spikes_windows(channel_data: np.ndarray, spikes_windows: np.ndarray):
+def get_spikes_peak_indexes_in_spikes_windows(channel_data: np.ndarray, spikes_windows: np.ndarray, min_amplitude_z_score):
     spikes = spikes_windows.copy()
     spikes = spikes.reshape(-1, 1)
     if spikes.shape[0] == 0:
         return None
     # Get the spike index in the channel data for each spike in the spikes array
-    spikes = np.vectorize(partial(get_spike_amplitude_index, channel_data))(spikes)
+    spikes = np.vectorize(partial(get_spike_amplitude_index, channel_data))(spikes, min_amplitude_z_score)
     # Removes epochs that have no spike with length that smaller than  MAX_SPIKE_LENGTH_MILLISECONDS
     spikes = spikes[spikes >= 0]
     spikes = np.unique(spikes).reshape(-1, 1)
@@ -358,20 +358,21 @@ def calculate_coordinates(subject: Subject, avarage = False):
     return _sum
 
 
-def remove_bad_channels(subjcet, raw: mne.io.Raw) -> list:
+def remove_bad_channels(subject, raw: mne.io.Raw) -> list:
     print('Removing bad channels, might take a while...')
-    if os.path.exists(subjcet.paths.subject_bad_channels_path):
-        with open(subjcet.paths.subject_bad_channels_path, 'r') as file:
+    if os.path.exists(subject.paths.subject_bad_channels_path):
+        with open(subject.paths.subject_bad_channels_path, 'r') as file:
             # we use set to support reading of raw data electrode by electrode
             bad_channels = set(file.read().splitlines())
             raw_channels = set(raw.ch_names)
+            raw_channels = [clean_channel_name(subject, channel) for channel in raw_channels]
             bad_channels = list(bad_channels.intersection(raw_channels))
-            print(f'Found bad channels file for subject {subjcet.p_number}, removing channels: {bad_channels}')
+            print(f'Found bad channels file for subject {subject.p_number}, removing channels: {bad_channels}')
             if raw:
                 return raw.pick_channels([channel for channel in raw.ch_names if channel not in bad_channels])
             return raw
     else:
-        print(f'No bad channels file found for subject {subjcet.p_number}')
+        print(f'No bad channels file found for subject {subject.p_number}')
         return raw
 
     # currently we skip this logic and reading the bad channels from a dedicated file
@@ -605,6 +606,7 @@ def control_stimuli_effects(control_subject: Subject, stimuli_subject: Subject, 
 
 
 def stimuli_effects(subject: Subject, flat_features: np.ndarray, only_nrem: bool = True):
+    print(f'Calculating stimuli effects for subject {subject.p_number}')
     sleep_start = sleeping_utils.get_sleep_start_end_indexes(subject)
 
     baseline_features = flat_features[flat_features[:, STIMULI_FLAG_INDEX] == STIMULI_FLAG_BEFORE_FIRST_STIMULI_SESSION]

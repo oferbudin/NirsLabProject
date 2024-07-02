@@ -8,14 +8,13 @@ from NirsLabProject.config.paths import Paths
 
 
 class Subject:
-    def __init__(self, subject: str, bipolar_model: bool, model: str = ''):
+    def __init__(self, subject: str, bipolar_model: bool, model: str = '', min_z_score: float = consts.MIN_AMPLITUDE_Z_SCORE):
         self.name = subject
         self.p_number = int(self.name[1:])
         self.bipolar_model = bipolar_model
-        self.paths = Paths(subject, self.bipolar_model)
+        self.paths = Paths(subject, self.bipolar_model, min_z_score=min_z_score)
         self.model_name = model
-        if model:
-            self.paths = self.paths = Paths(subject, model)
+        self.min_z_score = min_z_score
         if self.p_number >= consts.STIMULI_PROJECT_FIRST_P_NUMBER:
             self.stimuli_project = True
         else:
@@ -46,6 +45,7 @@ class Subject:
             os.makedirs(self.paths.subject_channels_spikes_features_dir_path, exist_ok=True)
             os.makedirs(self.paths.subject_features_3d_plots_dir_path, exist_ok=True)
             os.makedirs(self.paths.subject_raincloud_plots_dir_path, exist_ok=True)
+            os.makedirs(self.paths.subject_intracranial_model_features_dir_path, exist_ok=True)
 
     def save_flat_features_to_csv(self):
         titles = [name for index, name in consts.FEATURES_NAMES.items()]

@@ -338,7 +338,18 @@ def remove_stimuli_segments(raw, subject: Subject):
 
 def handle_stimuli(model, raw: mne.io.Raw, subject: Subject) -> np.ndarray:
     channels_raw = remove_stimuli_segments(raw.copy(), subject)
-    return model.predict(channels_raw, subject)
+    stimuli = model.predict(channels_raw, subject)
+    return add_stimuli_time_to_spikes(stimuli, subject)
+
+
+def add_stimuli_time_to_spikes(spikes: np.ndarray, subject: Subject) -> np.ndarray:
+    stimuli_times = np.array(pd.read_csv(subject.paths.subject_stimuli_path, header=None).iloc[0, :])
+    # every time stamp of a stimuli cause a cut of a second
+    # we need to add to every spike a second * the number of stimuli before it
+    stimuli_times = stimuli_times / 1000  # Convert to seconds
+    for stim_time in stimuli_times:
+        spikes = np.where(spikes >= stim_time, spikes + 1, spikes)
+    return spikes
 
 
 def detect_spikes_of_subject_for_specific_channels(subject: Subject, raw: mne.io.Raw, channels: list, model) -> Dict[str, np.ndarray]:
@@ -371,7 +382,7 @@ def detect_spikes_of_subject(subject: Subject, electrodes_raw: dict[str, mne.io.
         all_channels = model.get_channels(raw.ch_names)
 
         # run on each channel and detect the spikes between stims
-        channels_spikes = Parallel(n_jobs=3, backend='multiprocessing')(
+        channels_spikes = Parallel(n_jobs=2, backend='multiprocessing')(
             delayed(detect_spikes_of_subject_for_specific_channels)(subject, raw, channels, model) for channels in all_channels
         )
 

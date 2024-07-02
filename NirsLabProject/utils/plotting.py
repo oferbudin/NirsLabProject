@@ -36,7 +36,7 @@ def get_channel_names_and_color(channels: List[str]) -> list[str]:
 
 
 # adds stimuli windows to the provided plot (ax)
-def add_stimuli(subject: Subject, ax, number_of_channels: int, tmax: float, color: str):
+def add_stimuli(subject: Subject, ax, number_of_channels: int, tmax: float, color: str, is_histogram: bool = False):
     if not os.path.exists(subject.paths.subject_stimuli_path):
         return False
 
@@ -46,7 +46,12 @@ def add_stimuli(subject: Subject, ax, number_of_channels: int, tmax: float, colo
     edges = np.arange(tmax)
     edges = np.append(0, edges[stimuli_times])
 
-    values = np.ones_like(stimuli_times) * number_of_channels
+
+    if is_histogram:
+        multiplication = ax.get_ylim()[1]
+    else:
+        multiplication = number_of_channels
+    values = np.ones_like(stimuli_times) * multiplication
     values[::2] = 0  # 0 for even indexes, 1 for even indexes
 
     ax2 = ax.twiny()
@@ -63,7 +68,7 @@ def add_stimuli(subject: Subject, ax, number_of_channels: int, tmax: float, colo
     return True
 
 
-def add_hypnogram_to_fig(subject: Subject, ax, number_of_channels: int, sleeping_stage: int, tmax: float, color: str = '#DCDCDC'):
+def add_hypnogram_to_fig(subject: Subject, ax, number_of_channels: int, sleeping_stage: int, tmax: float, color: str = '#DCDCDC', is_histogram: bool = False):
     if os.path.exists(subject.paths.subject_hypnogram_path):
         hypno = np.loadtxt(subject.paths.subject_hypnogram_path)
         edges = np.arange(tmax) * HYPNOGRAM_SAMPLES_INTERVAL_IN_SECONDS
@@ -92,15 +97,28 @@ def add_hypnogram_to_fig(subject: Subject, ax, number_of_channels: int, sleeping
     # reduce data and bin edges to only moments of change in the hypnogram
     # (to avoid drawing thousands of tiny individual lines when sf is high)
     change_points = np.nonzero(np.ediff1d(hypno, to_end=1))
+
+    if is_histogram:
+        multiplication = ax.get_ylim()[1]
+    else:
+        multiplication = number_of_channels
     values = hypno[change_points]
-    values = number_of_channels / 5 * values.clip(0)
+    values = multiplication / 5 * values.clip(0)
+
     edges = np.append(0, edges[change_points[0] // divide_by])
     edges[-1] += HYPNOGRAM_SAMPLES_INTERVAL_IN_SECONDS
 
     ax2 = ax.twiny()
-    ax2.tick_params(top=False, labeltop=False, left=False, labelleft=False, right=False, labelright=False, bottom=False,
-                    labelbottom=False)
-    ax.stairs(values, edges, fill=True, color=color)
+    ax2.tick_params(
+        top=False,
+        labeltop=False,
+        left=False,
+        labelleft=False,
+        right=False,
+        labelright=False,
+        bottom=False,
+        labelbottom=False)
+    ax.stairs(values, edges, fill=True, color=color, alpha=0.7)
 
 
 def add_histogram_to_fig(ax, channels_data: List[np.ndarray]):
@@ -121,6 +139,7 @@ def add_histogram_to_fig(ax, channels_data: List[np.ndarray]):
     lim = (int(np.max(np.abs(x)) / binwidth) + 1) * binwidth
     bins = np.arange(0, lim + binwidth, binwidth)
     ax_histogram_x.hist(x, bins=bins)
+    return ax_histogram_x, ax_histogram_y
 
 
 def get_model_name(subject: Subject) -> str:
@@ -141,6 +160,8 @@ def create_raster_plot(subject: Subject, tmin: float, tmax: float, spikes: Dict[
     # sort channels by name
     # reverse the data so the deepest channel of every electrode will be above the rest
 
+    histogram_x_ax = None
+
     channels_name, channels_data = zip(*sorted(zip(spikes.keys(), spikes.values()), key=lambda x: custom_sort(x[0])))
     channels_name = list(reversed(channels_name))
     channels_data = list(reversed(channels_data))
@@ -154,7 +175,8 @@ def create_raster_plot(subject: Subject, tmin: float, tmax: float, spikes: Dict[
     plt.title(f"{subject.name} raster - {get_model_name(subject)}")
 
     # add hypnogram to the plot if needed
-    add_histogram and add_histogram_to_fig(ax, channels_data)
+    if add_histogram:
+        histogram_x_ax, _ = add_histogram_to_fig(ax, channels_data)
 
     # set raster plot start and end time to be the same as the edf file
     if not channels_data or channels_data[0].shape[0] == 0:
@@ -226,15 +248,18 @@ def create_raster_plot(subject: Subject, tmin: float, tmax: float, spikes: Dict[
         if os.path.exists(subject.paths.subject_hypnogram_path):
             # add wake time windows to the plot
             add_hypnogram_to_fig(subject, ax, len(channels_data), WAKE, tmax, WAKE_COLOR)
+            add_hypnogram_to_fig(subject, histogram_x_ax, len(channels_data), WAKE, tmax, WAKE_COLOR, True)
             legend.append(mpatches.Patch(color=WAKE_COLOR, label='Wake'))
 
             # add REM time windows to the plot
             add_hypnogram_to_fig(subject, ax, len(channels_data), REM, tmax, REM_COLOR)
+            add_hypnogram_to_fig(subject, histogram_x_ax, len(channels_data), REM, tmax, REM_COLOR, True)
             legend.append(mpatches.Patch(color=REM_COLOR, label='REM'))
 
         else:
             # for the stimulation project we have only NREM and not NREM windows
             add_hypnogram_to_fig(subject, ax, len(channels_data), REM, tmax, REM_COLOR)
+            add_hypnogram_to_fig(subject, histogram_x_ax, len(channels_data), REM, tmax, REM_COLOR, True)
             legend.append(mpatches.Patch(color=REM_COLOR, label='REM/Wake'))
         raster_path = subject.paths.subject_hypno_raster_plot_path
 
@@ -243,6 +268,7 @@ def create_raster_plot(subject: Subject, tmin: float, tmax: float, spikes: Dict[
 
     # add stimuli to the plot if needed
     if add_stimuli(subject, ax, len(channels_data), tmax, STIMULI_COLOR):
+        add_stimuli(subject, histogram_x_ax, len(channels_data), tmax, STIMULI_COLOR, True)
         legend.append(mpatches.Patch(color=STIMULI_COLOR, label='Stimuli'))
 
     # add legend to the plot if needed
