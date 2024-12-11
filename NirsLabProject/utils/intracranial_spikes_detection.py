@@ -1,26 +1,24 @@
 import os
-import mne
 import time
+from typing import List, Dict, Tuple
+
+import antropy as ant
 import joblib
+import mne
 import numpy as np
 import pandas as pd
-import antropy as ant
 import scipy.signal as sp_sig
 import scipy.stats as sp_stats
-from scipy.integrate import simps
-from typing import List, Dict, Tuple
 from joblib import Parallel, delayed
+from mne_features.feature_extraction import extract_features
+from mne_features.univariate import get_univariate_funcs, compute_pow_freq_bands
+from scipy.integrate import simps
 from sklearn.preprocessing import robust_scale
 
-from NirsLabProject.utils import general_utils as utils
 from NirsLabProject.config.consts import *
 from NirsLabProject.config.paths import Paths
 from NirsLabProject.config.subject import Subject
-
-import mne
-from mne_features.feature_extraction import extract_features
-from mne_features.univariate import get_univariate_funcs, compute_pow_freq_bands
-
+from NirsLabProject.utils import general_utils as utils
 
 mne.set_config('MNE_BROWSER_BACKEND', 'qt')
 
@@ -310,31 +308,47 @@ def save_detection_to_npz_file(detections: Dict[str, np.ndarray], subject: Subje
     np.savez(subject.paths.subject_spikes_path, **detections)
 
 
+def remove_stimuli_segments(raw, subject: Subject):
+    total_time = raw.tmax - raw.tmin
+    stimuli_times = np.array(pd.read_csv(subject.paths.subject_stimuli_path, header=None).iloc[0, :])
+
+    stimuli_time_windows = []
+    for stim_time in stimuli_times:
+        stim_time = stim_time / 1000  # Convert to seconds
+        start = stim_time - 0.5
+        end = stim_time + 0.5
+        stimuli_time_windows.append((start, end))
+
+    last_end = 0.0  # Initialize the end time of the last segment
+    raw_data = raw.get_data()
+
+    raw_data_without_stimuli = []
+    for seg_start, seg_end in stimuli_time_windows:
+        raw_data_without_stimuli.append(raw_data[:, int(last_end * SR): int(seg_start * SR)])
+        last_end = seg_end
+
+    raw_data_without_stimuli.append(raw_data[:, int(last_end * SR):])
+
+    print(
+        f'Raw data time: {total_time} | Stimuli time windows: {len(stimuli_time_windows)} seconds was removed from the raw data.')
+    new_raw = mne.io.RawArray(np.concatenate(raw_data_without_stimuli, axis=1), raw.info)
+    print(f'New raw data time: {new_raw.tmax - new_raw.tmin}')
+    return new_raw
+
+
 def handle_stimuli(model, raw: mne.io.Raw, subject: Subject) -> np.ndarray:
-    spikes = np.asarray([])
+    channels_raw = remove_stimuli_segments(raw.copy(), subject)
+    stimuli = model.predict(channels_raw, subject)
+    return add_stimuli_time_to_spikes(stimuli, subject)
 
-    stim_sections_sec = utils.get_stimuli_time_windows(subject)
-    stim_start_sec = stim_sections_sec[0][0]
 
-    # get all raw data until the first stim
-    baseline_raw = raw.copy().crop(tmin=0, tmax=stim_start_sec)
-    spikes = np.concatenate((spikes, model.predict(baseline_raw, subject)), axis=0)
-
-    # fill sections of stim and the stops between
-    for i, (start, end) in enumerate(stim_sections_sec):
-        # fill the current stim
-        raw_without_stim = utils.remove_stimuli_from_raw(subject, raw.copy().crop(tmin=start, tmax=end), start, end)
-        new_spikes = start + model.predict(raw_without_stim, subject)
-        spikes = np.concatenate((spikes, new_spikes), axis=0)
-        if i + 1 < len(stim_sections_sec):
-            # the stop is the time between the end of the curr section and the start of the next, buffer of 0.5 sec of the stim
-            next_data = raw.copy().crop(tmin=end + 0.5, tmax=stim_sections_sec[i + 1][0] - 0.5)
-            new_spikes = end + 0.5 + model.predict(next_data, subject)
-            spikes = np.concatenate((spikes, new_spikes), axis=0)
-        else:
-            data_to_the_end = raw.copy().crop(tmin=end + 0.5, tmax=raw.tmax)
-            new_spikes = end + 0.5 + model.predict(data_to_the_end, subject)
-            spikes = np.concatenate((spikes, new_spikes), axis=0)
+def add_stimuli_time_to_spikes(spikes: np.ndarray, subject: Subject) -> np.ndarray:
+    stimuli_times = np.array(pd.read_csv(subject.paths.subject_stimuli_path, header=None).iloc[0, :])
+    # every time stamp of a stimuli cause a cut of a second
+    # we need to add to every spike a second * the number of stimuli before it
+    stimuli_times = stimuli_times / 1000  # Convert to seconds
+    for stim_time in stimuli_times:
+        spikes = np.where(spikes >= stim_time, spikes + 1, spikes)
     return spikes
 
 
@@ -368,7 +382,7 @@ def detect_spikes_of_subject(subject: Subject, electrodes_raw: dict[str, mne.io.
         all_channels = model.get_channels(raw.ch_names)
 
         # run on each channel and detect the spikes between stims
-        channels_spikes = Parallel(n_jobs=1, backend='multiprocessing')(
+        channels_spikes = Parallel(n_jobs=2, backend='multiprocessing')(
             delayed(detect_spikes_of_subject_for_specific_channels)(subject, raw, channels, model) for channels in all_channels
         )
 

@@ -35,13 +35,13 @@ def resample_and_filter_data(subject: Subject):
         raw = mne.io.read_raw_edf(subject.paths.subject_raw_edf_path)
         raw = utils.pick_seeg_and_eog_channels(raw)
         utils.clean_channels_name_in_raw_obj(subject, raw)
+        raw = utils.remove_bad_channels(subject, raw)
         print(f'Raw data shape: {raw.tmax - raw.tmin} seconds, {raw.ch_names} channels, {raw.info["sfreq"]} Hz')
         for electrode_name, group in group_spikes_by_electrodes(raw).items():
             electrode_path = subject.paths.subject_resampled_fif_path(subject.name, electrode_name)
             if FORCE_LOAD_EDF or not os.path.exists(electrode_path):
                 print(f'Pre-processing channels of electrode {electrode_name}...')
                 raw_electrode = raw.copy().pick_channels(group)
-                # raw_electrode = utils.remove_bad_channels(raw_electrode) TODO: check if needed - not working
                 if raw_electrode.info['sfreq'] != SR:
                     print(f'Resampling data, it might take some time... (around {len(raw_electrode.ch_names) * 5 // 60} minutes)')
                     raw_electrode = raw_electrode.resample(SR, verbose=True, n_jobs=1)
@@ -65,6 +65,7 @@ def resample_and_filter_data(subject: Subject):
         electrode_path = subject.paths.subject_resampled_fif_path(subject.name, electrode_name)
         print(f'Data for electrode {electrode_name} was already resampled, reading it...')
         channel_raw = mne.io.read_raw_fif(electrode_path)
+        channel_raw = utils.remove_bad_channels(subject, channel_raw)  # a duplication for an already read raw
         utils.clean_channels_name_in_raw_obj(subject, channel_raw)
         loaded_raw[electrode_name] = channel_raw
         print(f'Raw data shape: {channel_raw.tmax - channel_raw.tmin} seconds, {channel_raw.ch_names} channels, {channel_raw.info["sfreq"]} Hz')
@@ -81,7 +82,7 @@ def channel_processing(subject: Subject, raw: mne.io.Raw, spikes_windows: Dict[s
     filtered_channel_data = channel_raw.get_data()[0]
     filtered_channel_data = sp_stats.zscore(filtered_channel_data)
     channel_spikes_windows = spikes_windows[channel_name]
-    channel_spikes_indexes = utils.get_spikes_peak_indexes_in_spikes_windows(filtered_channel_data, channel_spikes_windows)
+    channel_spikes_indexes = utils.get_spikes_peak_indexes_in_spikes_windows(filtered_channel_data, channel_spikes_windows, subject.min_z_score)
     if channel_spikes_indexes is None:
         return None
     amplitudes, lengths, angles, relative_amp, relative_length = utils.extract_spikes_peaks_features(filtered_channel_data, channel_spikes_indexes)
@@ -249,8 +250,8 @@ def baseline_diff(a, b):
     return res
 
 
-def get_subjects(filters=None, sort_key=None) -> Subject:
-    subjects = [Subject(d, True) for d in os.listdir(Paths.products_data_dir_path) if d.startswith('p')]
+def get_subjects(filters=None, sort_key=None, bipolar_model: bool = True) -> Subject:
+    subjects = [Subject(d, bipolar_model) for d in os.listdir(Paths.products_data_dir_path) if d.startswith('p')]
     if filters:
         for filt in filters:
             subjects = filter(filt, subjects)
@@ -460,8 +461,10 @@ def stimuli_effects(show: bool = False, control: bool = False, compare_to_base_l
         filters=[
             lambda subj: subj.stimuli_project,
             lambda subj: os.path.exists(subj.paths.subject_flat_features_path),
+            lambda subj: subj.p_number not in [520, 515, 545]
         ],
         sort_key=lambda subj: subj.p_number,
+        bipolar_model=False
     )
     subjects = {
         s: s for s in stimuli_subjects
@@ -472,10 +475,11 @@ def stimuli_effects(show: bool = False, control: bool = False, compare_to_base_l
             filters=[
                 lambda subj: not subj.stimuli_project,
                 lambda subj: not subj.sourasky_project,
-                lambda subj: subj.p_number not in [415],
+                lambda subj: subj.p_number not in [417,415, 416, 414, 406],
                 lambda subj: os.path.exists(subj.paths.subject_flat_features_path),
             ],
             sort_key=lambda subj: subj.p_number,
+            bipolar_model=False
         )
 
         if len(control_subjects) > len(stimuli_subjects):

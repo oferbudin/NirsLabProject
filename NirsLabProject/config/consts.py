@@ -2,7 +2,7 @@
 
 DOWNLOAD_FROM_GOOGLE_DRIVE = False
 FORCE_LOAD_EDF = True
-FORCE_DETECT_SPIKES = True
+FORCE_DETECT_SPIKES = False
 FORCE_CALCULATE_SPIKES_FEATURES = True
 
 # -------------------------------------------- General -----------------------------------------------------------------
@@ -148,7 +148,7 @@ STIMULI_PROJECT_INTERSUBJECTS_SUBJECT_NAME = 's1'
 # ----------------------------------------------------------------------------------------------------------------------
 
 SHARED_GOOGLE_DRIVE_PATH = 'https://drive.google.com/drive/u/1/folders/15kVUjay5dT-u4yyNMsXExfvolwErD-78'
-GOOGLE_DRIVE_LINK = 'https://drive.google.com/drive/u/1/folders/1Ujjzk1WRMnNM48ttfm5VO9A_fqZ-8fyL'
-DETECTION_PROJECT_GOOGLE_FRIVE_LINK = 'https://drive.google.com/drive/u/1/folders/1cLBAXj-eKIwxsE81gjt2MUwAur5xRjrq'
+STIMULI_PROJECT_GOOGLE_DRIVE_LINK = 'https://drive.google.com/drive/folders/1sW42FJGllh0eEuoxoThBW4osf754cl5H'
+DETECTION_PROJECT_GOOGLE_FRIVE_LINK = 'https://drive.google.com/drive/folders/1elKl_OQRDM1BG6K9hBSXqkKRpm_d4nZE'
 
 
