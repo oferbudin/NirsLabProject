@@ -1,9 +1,9 @@
 # -------------------------------------------- RUN CONFIG -----------------------------------------------------------------
 
 DOWNLOAD_FROM_GOOGLE_DRIVE = False
-FORCE_LOAD_EDF = False
+FORCE_LOAD_EDF = True
 FORCE_DETECT_SPIKES = False
-FORCE_CALCULATE_SPIKES_FEATURES = False
+FORCE_CALCULATE_SPIKES_FEATURES = True
 
 # -------------------------------------------- General -----------------------------------------------------------------
 
@@ -23,12 +23,12 @@ LOW_THRESHOLD_FREQUENCY = 5
 HIGH_THRESHOLD_FREQUENCY = 250
 
 # based on https://academic.oup.com/brain/article/146/5/1903/7024726
-MAX_SPIKE_LENGTH_MILLISECONDS = 70
+MAX_SPIKE_LENGTH_MILLISECONDS = 100
 MIN_SPIKE_LENGTH_MILLISECONDS = 20
 
 
 # In stimuli project might be 1 instead of 3
-MIN_AMPLITUDE_Z_SCORE = 1
+MIN_AMPLITUDE_Z_SCORE = 3
 MAX_AMPLITUDE_Z_SCORE = 30
 
 # https://academic.oup.com/brain/article/146/5/1903/7024726
@@ -126,9 +126,17 @@ STIMULI_FLAGS_NAMES = {
 
 HYPNOGRAM_FLAG_REM_OR_WAKE = 0
 HYPNOGRAM_FLAG_NREM = 1
+HYPNOGRAM_FLAG_REM = 2
+HYPNOGRAM_FLAG_WAKE = 3
 HYPNOGRAM_FLAGS_NAMES = {
     HYPNOGRAM_FLAG_REM_OR_WAKE: 'rem/wake',
-    HYPNOGRAM_FLAG_NREM: 'nrem'
+    HYPNOGRAM_FLAG_NREM: 'nrem',
+}
+
+DETECTION_HYPNOGRAM_FALGS_NAMES = {
+    HYPNOGRAM_FLAG_NREM: 'nrem',
+    HYPNOGRAM_FLAG_WAKE: 'wake',
+    HYPNOGRAM_FLAG_REM: 'rem'
 }
 
 # ----------------------------------------------------------------------------------------------------------------------
@@ -140,7 +148,7 @@ STIMULI_PROJECT_INTERSUBJECTS_SUBJECT_NAME = 's1'
 # ----------------------------------------------------------------------------------------------------------------------
 
 SHARED_GOOGLE_DRIVE_PATH = 'https://drive.google.com/drive/u/1/folders/15kVUjay5dT-u4yyNMsXExfvolwErD-78'
-GOOGLE_DRIVE_LINK = 'https://drive.google.com/drive/u/1/folders/1Ujjzk1WRMnNM48ttfm5VO9A_fqZ-8fyL'
-DETECTION_PROJECT_GOOGLE_FRIVE_LINK = 'https://drive.google.com/drive/u/1/folders/1cLBAXj-eKIwxsE81gjt2MUwAur5xRjrq'
+STIMULI_PROJECT_GOOGLE_DRIVE_LINK = 'https://drive.google.com/drive/folders/1sW42FJGllh0eEuoxoThBW4osf754cl5H'
+DETECTION_PROJECT_GOOGLE_FRIVE_LINK = 'https://drive.google.com/drive/folders/1elKl_OQRDM1BG6K9hBSXqkKRpm_d4nZE'
 
 

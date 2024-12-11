@@ -1,23 +1,24 @@
 import os
-import mne
 import time
+from typing import List, Dict, Tuple
+
+import antropy as ant
 import joblib
+import mne
 import numpy as np
 import pandas as pd
-import antropy as ant
 import scipy.signal as sp_sig
 import scipy.stats as sp_stats
-from scipy.integrate import simps
-from typing import List, Dict, Tuple
 from joblib import Parallel, delayed
+from mne_features.feature_extraction import extract_features
+from mne_features.univariate import get_univariate_funcs, compute_pow_freq_bands
+from scipy.integrate import simps
 from sklearn.preprocessing import robust_scale
 
-from NirsLabProject.utils import general_utils as utils
-from NirsLabProject.utils import sleeping_utils
 from NirsLabProject.config.consts import *
 from NirsLabProject.config.paths import Paths
 from NirsLabProject.config.subject import Subject
-
+from NirsLabProject.utils import general_utils as utils
 
 mne.set_config('MNE_BROWSER_BACKEND', 'qt')
 
@@ -144,28 +145,21 @@ class Model:
     def channel_feat(self, features: pd.DataFrame, raw: mne.io.Raw, channel: str) :
         pass
 
-    def format_raw(self, raw: mne.io.Raw) -> np.ndarray:
+    def format_raw(self, raw: mne.io.Raw, subj: Subject) -> np.ndarray:
         # must override in child class
         raise NotImplementedError
 
     def predict(self, raw: mne.io.Raw, subject: Subject) -> np.ndarray:
         # format the raw data
-        x = self.format_raw(raw)
+        start_time = time.time()
+        features = self.format_raw(raw, subject)
+        print(f'Feature extraciotn time: {time.time() - start_time}')
+        features = np.nan_to_num(features[self.feature_names])
 
-        # calculate the features
-        features = self.calc_features(x, subject.name)
-        self.channel_feat(features, raw, raw.ch_names[0])
-
-        # check for nans
-        features = np.nan_to_num(features[self.model_lgbm.feature_name_])
-
-        # predict using the models
-        y_lgbm = self.model_lgbm.predict(features)
-        y_rf = self.model_rf.predict(features)
-
-        # combine the predictions
-        y = np.array(y_lgbm) + np.array(y_rf)
-        y[y == 2] = 1
+        # predict using the model
+        # predictions = self.model.predict(features)
+        predictions = self.model.predict_proba(features)
+        y = (predictions[:, 1] >= 0.8).astype(int)
 
         spikes_onsets = np.where(y == 1)[0] / DIVISION_FACTOR
         return spikes_onsets
@@ -173,11 +167,13 @@ class Model:
 
 # Bipolar model class for bipolar montage data - subtracting two consecutive channels
 class BipolarModel(Model):
-    model_lgbm = joblib.load(os.path.join(Paths.models_dir_path, 'LGBM_V1.pkl'))
-    model_rf = joblib.load(os.path.join(Paths.models_dir_path, 'RF_V1.pkl'))
+    # model_lgbm = joblib.load(os.path.join(Paths.models_dir_path, 'LGBM_V1.pkl'))
+    # model_rf = joblib.load(os.path.join(Paths.models_dir_path, 'RF_V1.pkl'))
 
-    def __init__(self):
+    def __init__(self, model_name: str = ''):
         super(BipolarModel, self).__init__()
+        self.model_name = model_name
+        self.model = joblib.load(os.path.join(Paths.models_dir_path, model_name))
 
     def smoothing_and_normalization(self, feat: pd.DataFrame) -> pd.DataFrame:
         roll1 = feat.rolling(window=1, center=True, min_periods=1, win_type='triang').mean()
@@ -205,7 +201,7 @@ class BipolarModel(Model):
         feat['ag'] = feat['gamma'] / feat['alpha']
         feat['af'] = feat['fast'] / feat['alpha']
 
-    def format_raw(self, raw: mne.io.Raw) -> np.ndarray:
+    def format_raw(self, raw: mne.io.Raw, subj: Subject) -> np.ndarray:
         epochs = []
         window_size = int(SR / DIVISION_FACTOR)
         raw.load_data()
@@ -240,8 +236,12 @@ class BipolarModel(Model):
 
 # One channel model class that uses the raw data of one channel for prediction
 class UniChannelModel(Model):
-    model_lgbm = joblib.load(os.path.join(Paths.models_dir_path, 'LGBM_V2.pkl'))
-    model_rf = joblib.load(os.path.join(Paths.models_dir_path, 'RF_V2.pkl'))
+    def __init__(self, model_name: str = ''):
+        super(UniChannelModel, self).__init__()
+        self.model_name = model_name
+        model, feature_names = joblib.load(os.path.join(Paths.models_dir_path, model_name)).values()
+        self.model = model
+        self.feature_names = feature_names
 
     def add_power_ratio(self, feat: np.ndarray):
         # Add power ratios for EEG
@@ -263,20 +263,41 @@ class UniChannelModel(Model):
         for feat in ch_feat.keys():
             features[feat] = ch_feat[feat]
 
-    def format_raw(self, raw: mne.io.Raw) -> np.ndarray:
-        epochs = []
-        window_size = int(SR / DIVISION_FACTOR)
-        raw.load_data()
-        raw_data = raw.get_data()[0]
+    def format_raw(self, raw: mne.io.Raw, subj: Subject) -> np.ndarray:
+        chan = raw.ch_names[0]
+        chan_part = f'{chan}_{raw.first_samp}_{raw.last_samp}'
+        if not os.path.exists(subj.paths.subject_channels_spikes_features_intracranial_model(chan_part)):
+            window_size = int(SR / DIVISION_FACTOR)  # 250 ms
+            x = pd.DataFrame()
 
-        # Normalization
-        raw_data = sp_stats.zscore(raw_data)
-        for i in range(0, len(raw_data), window_size):
-            curr_block = raw_data[i: i + window_size]
-            if i + window_size < len(raw_data):
-                epochs.append(curr_block)
+            epochs = []
+            chan_raw = raw.copy().pick([chan]).get_data().flatten()
+            # normalize chan
+            chan_norm = (chan_raw - chan_raw.mean()) / chan_raw.std()
+            # run on all 250ms epochs
+            for i in range(0, len(chan_norm) - window_size, window_size):
+                epochs.append(chan_norm[i: i + window_size])
 
-        return np.array(epochs)
+            curr_feat = extract_epochs_top_features(epochs, subj.p_number, raw.info['sfreq'])
+            chan_feat = {
+                'chan_name': chan,
+                'chan_ptp': np.ptp(chan_norm),
+                'chan_skew': sp_stats.skew(chan_norm),
+                'chan_kurt': sp_stats.kurtosis(chan_norm),
+            }
+
+            for feat in chan_feat.keys():
+                curr_feat[feat] = chan_feat[feat]
+
+            # save the epochs as column for debugging
+            curr_feat['epoch'] = epochs
+            x = pd.concat([x, curr_feat], axis=0)
+
+            x.to_pickle(subj.paths.subject_channels_spikes_features_intracranial_model(chan_part))
+        else:
+            x = pd.read_pickle(subj.paths.subject_channels_spikes_features_intracranial_model(chan_part))
+
+        return x
 
     def get_channels(self, channels: List[str]) -> List[List[str]]:
         return [[channel] for channel in channels]
@@ -287,31 +308,47 @@ def save_detection_to_npz_file(detections: Dict[str, np.ndarray], subject: Subje
     np.savez(subject.paths.subject_spikes_path, **detections)
 
 
+def remove_stimuli_segments(raw, subject: Subject):
+    total_time = raw.tmax - raw.tmin
+    stimuli_times = np.array(pd.read_csv(subject.paths.subject_stimuli_path, header=None).iloc[0, :])
+
+    stimuli_time_windows = []
+    for stim_time in stimuli_times:
+        stim_time = stim_time / 1000  # Convert to seconds
+        start = stim_time - 0.5
+        end = stim_time + 0.5
+        stimuli_time_windows.append((start, end))
+
+    last_end = 0.0  # Initialize the end time of the last segment
+    raw_data = raw.get_data()
+
+    raw_data_without_stimuli = []
+    for seg_start, seg_end in stimuli_time_windows:
+        raw_data_without_stimuli.append(raw_data[:, int(last_end * SR): int(seg_start * SR)])
+        last_end = seg_end
+
+    raw_data_without_stimuli.append(raw_data[:, int(last_end * SR):])
+
+    print(
+        f'Raw data time: {total_time} | Stimuli time windows: {len(stimuli_time_windows)} seconds was removed from the raw data.')
+    new_raw = mne.io.RawArray(np.concatenate(raw_data_without_stimuli, axis=1), raw.info)
+    print(f'New raw data time: {new_raw.tmax - new_raw.tmin}')
+    return new_raw
+
+
 def handle_stimuli(model, raw: mne.io.Raw, subject: Subject) -> np.ndarray:
-    spikes = np.asarray([])
+    channels_raw = remove_stimuli_segments(raw.copy(), subject)
+    stimuli = model.predict(channels_raw, subject)
+    return add_stimuli_time_to_spikes(stimuli, subject)
 
-    stim_sections_sec = utils.get_stimuli_time_windows(subject)
-    stim_start_sec = stim_sections_sec[0][0]
 
-    # get all raw data until the first stim
-    baseline_raw = raw.copy().crop(tmin=0, tmax=stim_start_sec)
-    spikes = np.concatenate((spikes, model.predict(baseline_raw, subject)), axis=0)
-
-    # fill sections of stim and the stops between
-    for i, (start, end) in enumerate(stim_sections_sec):
-        # fill the current stim
-        raw_without_stim = utils.remove_stimuli_from_raw(subject, raw.copy().crop(tmin=start, tmax=end), start, end)
-        new_spikes = start + model.predict(raw_without_stim, subject)
-        spikes = np.concatenate((spikes, new_spikes), axis=0)
-        if i + 1 < len(stim_sections_sec):
-            # the stop is the time between the end of the curr section and the start of the next, buffer of 0.5 sec of the stim
-            next_data = raw.copy().crop(tmin=end + 0.5, tmax=stim_sections_sec[i + 1][0] - 0.5)
-            new_spikes = end + 0.5 + model.predict(next_data, subject)
-            spikes = np.concatenate((spikes, new_spikes), axis=0)
-        else:
-            data_to_the_end = raw.copy().crop(tmin=end + 0.5, tmax=raw.tmax)
-            new_spikes = end + 0.5 + model.predict(data_to_the_end, subject)
-            spikes = np.concatenate((spikes, new_spikes), axis=0)
+def add_stimuli_time_to_spikes(spikes: np.ndarray, subject: Subject) -> np.ndarray:
+    stimuli_times = np.array(pd.read_csv(subject.paths.subject_stimuli_path, header=None).iloc[0, :])
+    # every time stamp of a stimuli cause a cut of a second
+    # we need to add to every spike a second * the number of stimuli before it
+    stimuli_times = stimuli_times / 1000  # Convert to seconds
+    for stim_time in stimuli_times:
+        spikes = np.where(spikes >= stim_time, spikes + 1, spikes)
     return spikes
 
 
@@ -335,21 +372,17 @@ def detect_spikes_of_subject(subject: Subject, electrodes_raw: dict[str, mne.io.
         print(f'Spikes already detected for subject {subject.name}')
         return np.load(subject.paths.subject_spikes_path, allow_pickle=True)
 
-    # if sleep_cycle_data:
-    #     start_timestamp, end_timestamp = sleeping_utils.get_timestamps_in_seconds_of_first_rem_sleep(subject)
-    #     raw.crop(tmin=start_timestamp, tmax=end_timestamp)
-
     if subject.bipolar_model:
-        model = BipolarModel()
+        model = BipolarModel(subject.model_name)
     else:
-        model = UniChannelModel()
+        model = UniChannelModel(subject.model_name)
 
     spikes = {}
     for _, raw in electrodes_raw.items():
         all_channels = model.get_channels(raw.ch_names)
 
         # run on each channel and detect the spikes between stims
-        channels_spikes = Parallel(n_jobs=min(2, os.cpu_count()//2), backend='multiprocessing')(
+        channels_spikes = Parallel(n_jobs=2, backend='multiprocessing')(
             delayed(detect_spikes_of_subject_for_specific_channels)(subject, raw, channels, model) for channels in all_channels
         )
 
@@ -357,3 +390,88 @@ def detect_spikes_of_subject(subject: Subject, electrodes_raw: dict[str, mne.io.
             spikes.update(d)
     save_detection_to_npz_file(spikes, subject)
     return spikes
+
+
+def extract_epochs_features_mne(epochs, subj, sr):
+    feat = {
+        'subj': np.full(len(epochs), subj),
+        'epoch_id': np.arange(len(epochs)),
+    }
+
+    selected_funcs = get_univariate_funcs(sr)
+    selected_funcs.pop('spect_edge_freq', None)
+    bands_dict = {'theta': (4, 8), 'alpha': (8, 12), 'sigma': (12, 16), 'beta': (16, 30), 'gamma': (30, 100), 'fast': (100, 300)}
+    params = {'pow_freq_bands__freq_bands': bands_dict, 'pow_freq_bands__ratios': 'all', 'pow_freq_bands__psd_method': 'multitaper',
+              'energy_freq_bands__freq_bands': bands_dict}
+    X_new = extract_features(np.array(epochs)[:, np.newaxis, :], sr, selected_funcs, funcs_params=params, return_as_df=True)
+    X_new['abspow'] = compute_pow_freq_bands(sr, np.array(epochs), {'total': (0.1, 500)}, False, psd_method='multitaper')
+    # rename columns
+    names = []
+    for name in X_new.columns:
+        if type(name) is tuple:
+            if name[1] == 'ch0':
+                names.append(name[0])
+            else:
+                names.append(name[0] + '_' + name[1].replace('ch0_', ''))
+        else:
+            names.append(name)
+
+    X_new.columns = names
+
+    # add ratios between bands
+    X_new['energy_freq_bands_ab'] = X_new['energy_freq_bands_alpha'] / X_new['energy_freq_bands_beta']
+    X_new['energy_freq_bands_ag'] = X_new['energy_freq_bands_alpha'] / X_new['energy_freq_bands_gamma']
+    X_new['energy_freq_bands_as'] = X_new['energy_freq_bands_alpha'] / X_new['energy_freq_bands_sigma']
+    X_new['energy_freq_bands_af'] = X_new['energy_freq_bands_alpha'] / X_new['energy_freq_bands_fast']
+    X_new['energy_freq_bands_at'] = X_new['energy_freq_bands_alpha'] / X_new['energy_freq_bands_theta']
+    X_new['energy_freq_bands_bt'] = X_new['energy_freq_bands_beta'] / X_new['energy_freq_bands_theta']
+    X_new['energy_freq_bands_bs'] = X_new['energy_freq_bands_beta'] / X_new['energy_freq_bands_sigma']
+    X_new['energy_freq_bands_bg'] = X_new['energy_freq_bands_beta'] / X_new['energy_freq_bands_gamma']
+    X_new['energy_freq_bands_bf'] = X_new['energy_freq_bands_beta'] / X_new['energy_freq_bands_fast']
+    X_new['energy_freq_bands_st'] = X_new['energy_freq_bands_sigma'] / X_new['energy_freq_bands_theta']
+    X_new['energy_freq_bands_sg'] = X_new['energy_freq_bands_sigma'] / X_new['energy_freq_bands_gamma']
+    X_new['energy_freq_bands_sf'] = X_new['energy_freq_bands_sigma'] / X_new['energy_freq_bands_fast']
+    X_new['energy_freq_bands_gt'] = X_new['energy_freq_bands_gamma'] / X_new['energy_freq_bands_theta']
+    X_new['energy_freq_bands_gf'] = X_new['energy_freq_bands_gamma'] / X_new['energy_freq_bands_fast']
+    X_new['energy_freq_bands_ft'] = X_new['energy_freq_bands_fast'] / X_new['energy_freq_bands_theta']
+
+    # Convert to dataframe
+    feat = pd.DataFrame(feat)
+    feat = pd.concat([feat, X_new], axis=1)
+
+    return feat
+
+
+def extract_epochs_top_features(epochs, subj, sr):
+    mobility, complexity = ant.hjorth_params(epochs, axis=1)
+    feat = {
+        'subj': np.full(len(epochs), subj),
+        'epoch_id': np.arange(len(epochs)),
+        'kurtosis': sp_stats.kurtosis(epochs, axis=1),
+        'hjorth_mobility': mobility,
+        'hjorth_complexity': complexity,
+        'ptp_amp': np.ptp(epochs, axis=1),
+        'samp_entropy': np.apply_along_axis(ant.sample_entropy, axis=1, arr=epochs)
+    }
+
+    selected_funcs = ['teager_kaiser_energy']
+    X_new = extract_features(np.array(epochs)[:, np.newaxis, :], sr, selected_funcs,
+                             return_as_df=True)
+    # rename columns
+    names = []
+    for name in X_new.columns:
+        if type(name) is tuple:
+            if name[1] == 'ch0':
+                names.append(name[0])
+            else:
+                names.append(name[0] + '_' + name[1].replace('ch0_', ''))
+        else:
+            names.append(name)
+
+    X_new.columns = names
+
+    # Convert to dataframe
+    feat = pd.DataFrame(feat)
+    feat = pd.concat([feat, X_new], axis=1)
+
+    return feat

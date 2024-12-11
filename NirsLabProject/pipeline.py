@@ -13,8 +13,8 @@ from NirsLabProject.utils import scalp_spikes_detection, intracranial_spikes_det
 from NirsLabProject.utils.google_drive_download import GoogleDriveDownloader
 
 
-def main(subject_name: str):
-    subject = Subject(subject_name, True)
+def main(subject_name: str, bipolar_model: bool = True, model_name: str = '', min_z_score: float = MIN_AMPLITUDE_Z_SCORE):
+    subject = Subject(subject_name, bipolar_model, model_name, min_z_score)
 
     # resamples and filters the data
     raw = pipeline_utils.resample_and_filter_data(subject)
@@ -30,16 +30,27 @@ def main(subject_name: str):
     if subject.stimuli_project:
         scalp_spikes_spikes_windows = np.array([])
     else:
-        scalp_spikes_spikes_windows = scalp_spikes_detection.detect_spikes_of_subject(subject, eog_raw)
+        scalp_spikes_spikes_windows = np.array([])
+        # scalp_spikes_spikes_windows = scalp_spikes_detection.detect_spikes_of_subject(subject, eog_raw)
 
     # detects intracranial spikes
     intracranial_spikes_spikes_windows = intracranial_spikes_detection.detect_spikes_of_subject(subject, raw)
 
-    flat_features, channels_spikes_features, index_to_channel_name, groups = pipeline_utils.get_flat_features(subject, raw, intracranial_spikes_spikes_windows, scalp_spikes_spikes_windows)
+    # TODO: remove bad channels
+    bad_channels_all = {'p402': ['LA7', 'ROF3', 'RAC1']}
+    bad_channels = bad_channels_all.get(subject_name, [])
+    clean_intracranial_spikes_spikes_windows = {key: val for key, val in intracranial_spikes_spikes_windows.items() if
+                                                key not in bad_channels}
+
+    flat_features, channels_spikes_features, index_to_channel_name, groups = pipeline_utils.get_flat_features(subject,
+                                                                                                              raw,
+                                                                                                              clean_intracranial_spikes_spikes_windows,
+                                                                                                              scalp_spikes_spikes_windows)
+
     channel_name_to_index = {name: index for index, name in index_to_channel_name.items()}
 
     # creates raster plots of the intracranial spikes
-    pipeline_utils.create_raster_plots(subject, raw, channels_spikes_features, scalp_spikes_spikes_windows)
+    pipeline_utils.create_raster_plots(subject, raw, channels_spikes_features)
 
     # plot the electrodes coordinates in 3D space
     pipeline_utils.save_electrodes_coordinates(subject, raw)
@@ -75,25 +86,27 @@ def main(subject_name: str):
 # subjects_names can be a list of subjects that have files in Google Drive
 # or None to download all subjects
 # e.g. run_all_detection_project(['p1', 'p2'])
-def run_all_stimuli_project(subjects_names: list = None):
+def run_all_stimuli_project(subjects_names: list = None, model_name: str = ''):
     gdd = GoogleDriveDownloader()
-    for p in gdd.download_subject_data_one_by_one(consts.GOOGLE_DRIVE_LINK, subjects_names):
-        print(f'Processing {p}')
+    for p in gdd.download_subject_data_one_by_one(consts.STIMULI_PROJECT_GOOGLE_DRIVE_LINK, subjects_names):
         try:
-            main(p.name)
+            for min_z_score in [1, 2]:
+                print(f'Processing {p} with max z score {min_z_score}')
+                main(p.name, model_name=model_name, bipolar_model=False, min_z_score=min_z_score)
         except Exception as e:
-            print(f'Failed to process {p.name} due to {e}')
+            print(f'Failed to process {p.name} due to {traceback.format_exc()}')
 
 
 # subjects_names can be a list of subjects that have files in Google Drive
 # or None to download all subjects
 # e.g. run_all_detection_project(['p1', 'p2'])
-def run_all_detection_project(subjects_names: list = None):
+def run_all_detection_project(subjects_names: list = None, model_name: str = ''):
     gdd = GoogleDriveDownloader()
     for p in gdd.download_subject_data_one_by_one(consts.DETECTION_PROJECT_GOOGLE_FRIVE_LINK, subjects_names):
-        print(f'Processing {p}')
         try:
-            main(p.name)
+            for min_z_score in [1, 2]:
+                print(f'Processing {p} with max z score {min_z_score}')
+                main(p.name, model_name=model_name, bipolar_model=False, min_z_score=min_z_score)
         except Exception as e:
             print(f'Failed to process {p.name} due to {traceback.format_exc()}')
 
@@ -101,11 +114,26 @@ def run_all_detection_project(subjects_names: list = None):
 if __name__ == '__main__':
     start_time = time.time()
     # for p in [p.split('.')[0] for p in os.listdir(Paths.raw_data_dir_path) if p.startswith('p')]:
-    #         print(f'Processing {p}')
+    subjects_example = ['p402', 'p487', 'p5101', 'p515', 'p013', 'p398']
+    paper_subjects = ['p396', 'p398', 'p402', 'p406', 'p415', 'p416', 'p485', 'p487', 'p489', 'p498', 'p499', 'p520']
+    to_run = ['p416', 'p485', 'p487', 'p489', 'p498', 'p499', 'p520']
+
+    for p in to_run:
+        for model_name in os.listdir(Paths.models_dir_path):
+            if model_name == 'old' or 'f14' not in model_name:
+                continue
+            print(f'Processing {p}, model: {model_name}')
+            main(p, False, model_name)
     # for p in ['p485', 'p486', 'p488', 'p496', 'p499', 'p520']:
     #     main(p)
+    main('p496', bipolar_model=False, model_name='lgbm_full_f15_s25_b_V5.pkl')
+    # subjects_names = ['p5101', 'p5107', 'p545', 'p544', 'p538', 'p520', 'p515', 'p505', 'p499', 'p497', 'p496', 'p490', 'p489', 'p489', 'p489']
+    subjects_names = []
+    run_all_stimuli_project(model_name='lgbm_full_f15_s25_b_V5.pkl', subjects_names=subjects_names)
 
-    # run_all_detection_project(['p51'])
+    # subjects_names = ['p5101', 'p5107', 'p545', 'p544', 'p538', 'p520', 'p515', 'p505', 'p499', 'p497', 'p496', 'p490', 'p489', 'p489', 'p489']
+    # subjects_names = ['p5101', 'p5107', 'p545', 'p544', 'p538', 'p520', 'p515', 'p505', 'p499', 'p498','p497', 'p496', 'p490', 'p489', 'p488', 'p487', 'p486']
+    # run_all_stimuli_project(model_name='lgbm_full_f15_s25_b_V5.pkl', subjects_names=subjects_names)
 
     # pipeline_utils.detection_project_intersubjects_plots(True)
     pipeline_utils.stimuli_effects(control=True, compare_to_base_line=True)

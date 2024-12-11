@@ -183,12 +183,18 @@ class GoogleDriveDownloader:
         #  Create a dictionary of subject name to files
         subject_to_files = {}
         for file in files:
+            if not file['name'].startswith('p'):
+                continue
             subject_name = file['name'].split('_')[0].lower()
             if subjects and subject_name not in subjects:
                 continue
             if subject_name not in subject_to_files:
                 subject_to_files[subject_name] = []
-            subject_to_files[subject_name].append(file)
+            #     one layer deeper
+            if file['mimeType'] == 'application/vnd.google-apps.folder':
+                subject_to_files[subject_name].extend(self.listfolders(file['id']))
+            else:
+                subject_to_files[subject_name].append(file)
 
         for subject_name, files in subject_to_files.items():
             subject = Subject(subject_name, bipolar)
@@ -213,8 +219,9 @@ class GoogleDriveDownloader:
                     renamed_file_path = os.path.join(subject.paths.raw_data_dir_path, subject_name.split('_')[0].lower()) + '.edf'
                     if os.path.exists(renamed_file_path):
                         print(f'File {renamed_file_path} already exists, skipping download')
-                    else:
+                    elif not os.path.exists(os.path.join(subject.paths.raw_data_dir_path, file['name'])):
                         self.downloadfiles(file['id'], file['name'], subject.paths.raw_data_dir_path)
+                    if os.path.exists(os.path.join(subject.paths.raw_data_dir_path, file['name'])):
                         os.rename(
                             os.path.join(subject.paths.raw_data_dir_path,  file['name']),
                             renamed_file_path
@@ -225,13 +232,18 @@ class GoogleDriveDownloader:
                     self.downloadfiles(file['id'], file['name'], subject.paths.stimuli_dir_path)
 
             yield subject
-            # os.remove(subject.paths.subject_raw_edf_path)
 
-            if not have_preprocessed_data or FORCE_LOAD_EDF:
+            # if not have_preprocessed_data or FORCE_LOAD_EDF:
                 # zip the folder
-                zip_name = f'{subject_name}_pre_processed'
-                zip_name_with_suffix = f'{zip_name}.zip'
-                shutil.make_archive(zip_name, 'zip', subject.paths.subject_resampled_data_dir_path)
+                # zip_name = f'{subject_name}_pre_processed'
+                # zip_name_with_suffix = f'{zip_name}.zip'
+                # shutil.make_archive(zip_name, 'zip', subject.paths.subject_resampled_data_dir_path)
                 # self.upload_file(zip_name_with_suffix, folder_id, zip_name_with_suffix)
                 # os.remove(zip_name_with_suffix)
-            # self.delete_dir_contents(subject.paths.subject_resampled_data_dir_path)
+            try:
+                os.remove(subject.paths.subject_raw_edf_path)
+            except OSError:
+                pass
+            self.delete_dir_contents(subject.paths.subject_resampled_data_dir_path)
+            self.delete_dir_contents(subject.paths.subject_intracranial_model_features_dir_path)
+
