@@ -44,13 +44,13 @@ def resample_and_filter_data(subject: Subject):
                 # raw_electrode = utils.remove_bad_channels(raw_electrode) TODO: check if needed - not working
                 if raw_electrode.info['sfreq'] != SR:
                     print(f'Resampling data, it might take some time... (around {len(raw_electrode.ch_names) * 5 // 60} minutes)')
-                    raw_electrode = raw_electrode.resample(SR, verbose=True, n_jobs=2)
+                    raw_electrode = raw_electrode.resample(SR, verbose=True, n_jobs=1)
                 else:
                     raw_electrode.load_data()
                 print('applying notch filter...')
-                raw_electrode = raw_electrode.notch_filter(50 if subject.sourasky_project else 60, n_jobs=2, verbose=True)
+                raw_electrode = raw_electrode.notch_filter(50 if subject.sourasky_project else 60, n_jobs=1, verbose=True)
                 print('applying band pass filter...')
-                raw_electrode = raw_electrode.filter(0.1, 499, verbose=True, n_jobs=2)
+                raw_electrode = raw_electrode.filter(0.1, 499, verbose=True, n_jobs=1)
                 print('Saving resampled data...')
                 raw_electrode.save(electrode_path, split_size='2GB', verbose=True, overwrite=True)
                 del raw_electrode

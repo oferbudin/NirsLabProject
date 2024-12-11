@@ -1,7 +1,7 @@
 # -------------------------------------------- RUN CONFIG -----------------------------------------------------------------
 
 DOWNLOAD_FROM_GOOGLE_DRIVE = False
-FORCE_LOAD_EDF = False
+FORCE_LOAD_EDF = True
 FORCE_DETECT_SPIKES = True
 FORCE_CALCULATE_SPIKES_FEATURES = True
 
@@ -23,12 +23,12 @@ LOW_THRESHOLD_FREQUENCY = 5
 HIGH_THRESHOLD_FREQUENCY = 250
 
 # based on https://academic.oup.com/brain/article/146/5/1903/7024726
-MAX_SPIKE_LENGTH_MILLISECONDS = 70
+MAX_SPIKE_LENGTH_MILLISECONDS = 100
 MIN_SPIKE_LENGTH_MILLISECONDS = 20
 
 
 # In stimuli project might be 1 instead of 3
-MIN_AMPLITUDE_Z_SCORE = 1
+MIN_AMPLITUDE_Z_SCORE = 3
 MAX_AMPLITUDE_Z_SCORE = 30
 
 # https://academic.oup.com/brain/article/146/5/1903/7024726

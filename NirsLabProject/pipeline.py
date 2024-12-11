@@ -36,7 +36,17 @@ def main(subject_name: str, bipolar_model: bool = True, model_name: str = ''):
     # detects intracranial spikes
     intracranial_spikes_spikes_windows = intracranial_spikes_detection.detect_spikes_of_subject(subject, raw)
 
-    flat_features, channels_spikes_features, index_to_channel_name, groups = pipeline_utils.get_flat_features(subject, raw, intracranial_spikes_spikes_windows, scalp_spikes_spikes_windows)
+    # TODO: remove bad channels
+    bad_channels_all = {'p402': ['LA7', 'ROF3', 'RAC1']}
+    bad_channels = bad_channels_all.get(subject_name, [])
+    clean_intracranial_spikes_spikes_windows = {key: val for key, val in intracranial_spikes_spikes_windows.items() if
+                                                key not in bad_channels}
+
+    flat_features, channels_spikes_features, index_to_channel_name, groups = pipeline_utils.get_flat_features(subject,
+                                                                                                              raw,
+                                                                                                              clean_intracranial_spikes_spikes_windows,
+                                                                                                              scalp_spikes_spikes_windows)
+
     channel_name_to_index = {name: index for index, name in index_to_channel_name.items()}
 
     # creates raster plots of the intracranial spikes
@@ -102,9 +112,13 @@ def run_all_detection_project(subjects_names: list = None):
 if __name__ == '__main__':
     start_time = time.time()
     # for p in [p.split('.')[0] for p in os.listdir(Paths.raw_data_dir_path) if p.startswith('p')]:
-    for p in ['p402']:
+    subjects_example = ['p402', 'p487', 'p5101', 'p515', 'p013', 'p398']
+    paper_subjects = ['p396', 'p398', 'p402', 'p406', 'p415', 'p416', 'p485', 'p487', 'p489', 'p498', 'p499', 'p520']
+    to_run = ['p416', 'p485', 'p487', 'p489', 'p498', 'p499', 'p520']
+
+    for p in to_run:
         for model_name in os.listdir(Paths.models_dir_path):
-            if model_name == 'old' or 'f17' not in model_name:
+            if model_name == 'old' or 'f14' not in model_name:
                 continue
             print(f'Processing {p}, model: {model_name}')
             main(p, False, model_name)
